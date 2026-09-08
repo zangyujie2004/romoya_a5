@@ -21,4 +21,4 @@ config_local.yaml
 /impainting/model_ckpt/
 /tests/
 /workload/
-/impainting
+/impainting/
