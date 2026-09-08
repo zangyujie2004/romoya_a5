@@ -1,0 +1,6 @@
+# PyTorch build verified on the H20/CUDA 12.4 runtime.
+# Install this file before requirements.txt.
+--index-url https://download.pytorch.org/whl/cu124
+
+torch==2.6.0
+torchvision==0.21.0

@@ -1,0 +1,110 @@
+io:
+  input_base_path: /mnt/oss_data/arx3
+  task: 'huanggua_office'
+  subtasks: ['peel_huanggua_coffee_xin_fail_wyt_0813_30']
+  output_base_path: /mnt/workspace/zyj/data
+  max_episode_length: -1 # -1 for all episodes; cap per subtask, use all if fewer available
+  verbose: true
+
+dagger:
+  enabled: false
+  detection: master_clock
+  # gripper_compensation: 0.01
+  recording_threshold: 300 # ms
+  keep_events: [1]  # if [1] only save teaching actions
+  min_frames: 10 # 300ms
+
+streams:
+  camera:
+    base_0:
+      impainting: off  # off | replace | dual  (false→off, true→replace)
+      rgb: true
+      left_fish_eye: false
+      right_fish_eye: false
+    left_wrist_0:
+      rgb: true
+      left_fish_eye: false
+      right_fish_eye: false
+    right_wrist_0:
+      rgb: true
+      left_fish_eye: false
+      right_fish_eye: false
+  tactile:
+    left_wrist_0:
+      difference: false
+      pointcloud: true
+    left_wrist_1:
+      difference: false
+      pointcloud: true
+    right_wrist_0:
+      difference: false
+      pointcloud: true
+    right_wrist_1:
+      difference: false
+      pointcloud: true
+  robot:
+    left_arm:
+      joint: true
+      vel: true
+      effort: true
+      eef: true
+    right_arm:
+      joint: true
+      vel: true
+      effort: true
+      eef: true
+  gripper_vq:
+    enabled: false
+    threshold: 0.035
+    vis: true
+  verbose_freq: false
+
+sync:
+  master_clock: camera/base_0
+
+align:
+  target_fps: 30
+  task_window:
+    pos_threshold: 0.0008
+    step: 2
+    start_offset: 30
+    end_offset: 60
+    min_start_idx: 10
+  verbose: false
+  task_vis: false
+
+process:
+  camera:
+    resize: true
+    resize_hw: [224, 224]
+  tactile:
+    pointcloud_shape: [35, 20, 6]
+  robot:
+    history_steps: 4
+
+normalize:
+  enabled: false
+  
+vis:
+  camera:
+    enabled: false
+    step: 5
+  tactile:
+    enabled: false
+    step: 5
+  state_action:
+    enabled: false
+  video:
+    enabled: false
+    fps: 30
+
+accelerate:
+  enabled: true # if false: 8s/episode
+  num_workers: 8 # 4: 2.98s/ep, 8: 1.88s/ep, 16: 1.29s/ep
+
+export:
+  format: zarr # zarr, hdf5, lerobot, none
+  zarr:
+    compress: false
+    buffer_episodes: true
+    chunk_target_mb: 32

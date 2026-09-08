@@ -1,0 +1,36 @@
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+.conda/
+
+# Editor and OS metadata
+.DS_Store
+.idea/
+.vscode/
+*~
+*.swp
+*.swo
+
+# Local backups, logs, and temporary files
+*.bak
+*.bak_*
+*.log
+*.tmp
+*.partial
+
+# Generated media and run artifacts
+*.mp4
+*.avi
+*.mov
+*.mkv
+timing.json
+status.json
+
+# Model checkpoints are downloaded/provisioned separately
+model_ckpt/
+third_party/ProPainter/weights/*.pt
+third_party/ProPainter/weights/*.pth
+third_party/ProPainter/weights/*.ckpt
+

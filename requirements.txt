@@ -1,0 +1,22 @@
+# Core pipeline (load / process / sync / export zarr / normalize)
+numpy>=1.24.0
+zarr>=3.0.10,<4
+torch>=2.1.0
+PyYAML>=6.0
+tqdm>=4.66.0
+termcolor>=2.4.0
+opencv-python>=4.8.0
+
+# Visualization (state_action / tactile / video check scripts)
+matplotlib>=3.7.0
+
+# Optional: export.format = hdf5
+h5py>=3.10.0
+
+# Optional: export.format = lerobot
+# pandas>=2.0.0
+# pillow>=10.0.0
+# lerobot>=0.4.0
+
+# System dependency (not installable via pip):
+# ffmpeg — required for camera video decode and overview mp4 export

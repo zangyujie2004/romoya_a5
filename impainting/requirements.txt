@@ -1,0 +1,29 @@
+# Hand-removal inference stack (Grounding DINO + SAM + ProPainter).
+#
+# Tested runtime:
+#   Python 3.10
+#   NVIDIA driver compatible with CUDA 12.4
+#   ffmpeg available on PATH
+#
+# Install the CUDA-specific packages first:
+#   python -m pip install -r requirements-cu124.txt
+#   python -m pip install -r requirements.txt
+#
+# Keep this separate from preprocess/requirements.txt: this GPU inference stack
+# is large and has tighter NumPy/PyTorch compatibility requirements.
+
+numpy==1.26.4
+opencv-python-headless==4.11.0.86
+Pillow==12.3.0
+imageio==2.37.4
+imageio-ffmpeg==0.6.0
+scipy==1.15.3
+einops==0.8.2
+matplotlib==3.10.9
+tqdm==4.68.4
+requests==2.34.2
+av==16.1.0
+transformers==4.57.6
+tokenizers==0.22.2
+huggingface-hub==0.36.2
+safetensors==0.8.0
