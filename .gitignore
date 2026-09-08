@@ -1,0 +1,13 @@
+/data/
+/datasets/
+/checkpoints/
+/artifacts/
+/outputs/
+/logs/
+/wandb/
+.venv/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
