@@ -1,13 +1,13 @@
 [submodule "third_party/fast-foundationstereo"]
-	path = PrometheusV2/third_party/fast-foundationstereo
+	path = third_party/fast-foundationstereo
 	url = https://github.com/ningma-dev/Fast-FoundationStereo.git
 [submodule "third_party/HumanEgo"]
-	path = PrometheusV2/third_party/HumanEgo
+	path = third_party/HumanEgo
 	url = https://github.com/ningma-dev/HumanEgo.git
 [submodule "third_party/arx5-sdk"]
-	path = PrometheusV2/third_party/arx5-sdk
+	path = third_party/arx5-sdk
 	url = https://github.com/MrSecant/arx5-sdk.git
 [submodule "third_party/flow_matching"]
-	path = PrometheusV2/third_party/flow_matching
+	path = third_party/flow_matching
 	url = https://github.com/zangyujie2004/flow_matching.git
 	branch = main

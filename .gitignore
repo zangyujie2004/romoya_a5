@@ -11,3 +11,15 @@ __pycache__/
 .env
 .env.*
 !.env.example
+.pytest_cache/
+*.egg-info/
+outputs/
+.codex/
+.agents/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+**/*.zarr/
+**/policy_latent_cache.zarr/
+docs/
