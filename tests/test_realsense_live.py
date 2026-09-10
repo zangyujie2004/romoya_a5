@@ -38,7 +38,7 @@ def test_live_realsense_streams_ready():
         pytest.skip("set PROMETHEUS_LIVE_REALSENSE=1 to stream physical RealSense cameras")
 
     status = wait_once(
-        os.environ.get("PROMETHEUS_REALSENSE_CONFIG", "x5_2_humanego"),
+        os.environ.get("PROMETHEUS_REALSENSE_CONFIG", "a5_drag"),
         float(os.environ.get("PROMETHEUS_REALSENSE_TIMEOUT_S", "10.0")),
     )
     assert status["ready"] is True
@@ -49,7 +49,7 @@ def main() -> int:
         print("refusing to stream RealSense without PROMETHEUS_LIVE_REALSENSE=1")
         return 2
     wait_once(
-        os.environ.get("PROMETHEUS_REALSENSE_CONFIG", "x5_2_humanego"),
+        os.environ.get("PROMETHEUS_REALSENSE_CONFIG", "a5_drag"),
         float(os.environ.get("PROMETHEUS_REALSENSE_TIMEOUT_S", "10.0")),
     )
     return 0

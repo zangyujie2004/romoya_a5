@@ -21,10 +21,10 @@ inputs:
     - right_wrist_1_tactile_flow
 
 inference:
-  run_dir: third_party/flow_matching/outputs/chahua_eef_vision
+  run_dir: third_party/fm/outputs/egg_sg/egg
   device: cuda
   warmup: true
-  use_memory: true
+  use_memory: false
   memory_feed_hz: 30.0
   memory_warning_lag_ms: 300.0
   memory_max_lag_ms: 500.0

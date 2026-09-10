@@ -12,7 +12,3 @@ export ROS_AUTOMATIC_DISCOVERY_RANGE="${ROS_AUTOMATIC_DISCOVERY_RANGE:-LOCALHOST
 exec python -m prometheus.workflows.rollout_sync \
   --config-name rollout_fm_sync \
   "$@"
-
-# Vision / tactile share this entry. Tactile streams are enabled automatically when
-# checkpoint resolved_config has data.use_tactile=true (see policy/fm.yaml).
-# Override run_dir: user.policy_run_dir=third_party/flow_matching/outputs/<task>

@@ -87,7 +87,7 @@ def _simulate_window_skew(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--robot-id", default="x5_1")
+    parser.add_argument("--robot-id", default="a5_drag")
     parser.add_argument("--control-domain", type=int, default=21)
     parser.add_argument("--sensor-domain", type=int, default=22)
     parser.add_argument("--anchor", default="base_0_color")

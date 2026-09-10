@@ -1,15 +1,14 @@
 defaults:
-  - robot: x5_1
+  - robot: a5_drag
   - task: default
   - _self_
 
 user:
-  task_id: default
-  input: /home/wujie/workspace/raw_data/prometheus/ningkai_bottle_0708/0000/robot/robot_state_dict.pkl
-
+  task_id: egg
+  input: ${oc.env:HOME}/workspace/raw_data/egg/0000
   control_mode: joint
   action_hz: 30.0
-  dry_run: true
+  dry_run: false
 
 task:
   id: ${user.task_id}
@@ -18,7 +17,7 @@ run:
   id: ${now:%Y%m%d_%H%M%S}
   output_dir: outputs/replay/${task.id}/${run.id}
   runtime_dir: ${run.output_dir}/runtime
-  wait_ready_timeout_s: 5.0
+  wait_ready_timeout_s: 15.0
 
 hardware:
   name: hardware

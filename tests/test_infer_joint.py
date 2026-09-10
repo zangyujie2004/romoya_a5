@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-_FLOW_MATCHING_ROOT = Path(__file__).resolve().parents[1] / "third_party" / "flow_matching"
+_FLOW_MATCHING_ROOT = Path(__file__).resolve().parents[1] / "third_party" / "fm"
 if str(_FLOW_MATCHING_ROOT) not in sys.path:
     sys.path.insert(0, str(_FLOW_MATCHING_ROOT))
 

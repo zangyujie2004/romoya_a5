@@ -20,7 +20,7 @@ DEFAULT_STREAM_NAMES = (
 )
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_FLOW_MATCHING_ROOT = _PROJECT_ROOT / "third_party" / "flow_matching"
+_FLOW_MATCHING_ROOT = _PROJECT_ROOT / "third_party" / "fm"
 
 
 def _ensure_flow_matching_importable() -> Path:

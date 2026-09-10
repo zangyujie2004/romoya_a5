@@ -1,24 +1,24 @@
 defaults:
-  - robot: x5_1_fm
+  - robot: a5_drag
   - task: default
   - policy: fm
   - _self_
 
 user:
   # Operators should normally only edit this block.
-  task_id: default
-  inference_root: /home/wujie/workspace/raw_data/prometheus_inference
+  task_id: egg
+  inference_root: ${oc.env:HOME}/workspace/raw_data/prometheus_inference
   steps: 50
   dry_run: false
-  action_space: abs_eef
+  action_space: abs_qpos
   action_hz: 30.0
-  n_action_steps: 32
-  use_memory: true
+  n_action_steps: 128
+  use_memory: false
   memory_feed_hz: 30.0
   memory_warning_lag_ms: 300.0
   memory_max_lag_ms: 500.0
   memory_ready_timeout_ms: 5000.0
-  policy_run_dir: /home/wujie/workspace/inference/PrometheusV2/third_party/flow_matching/outputs/base_peel/chahua_eef_vision_view_2
+  policy_run_dir: third_party/fm/outputs/egg_sg/egg
 
 task:
   id: ${user.task_id}
@@ -27,13 +27,12 @@ run:
   id: ${now:%Y%m%d_%H%M%S_%f}
   output_dir: ${user.inference_root}/${task.id}/${run.id}
   runtime_dir: ${run.output_dir}/runtime
-  wait_ready_timeout_s: 5.0
+  wait_ready_timeout_s: 15.0
   steps: ${user.steps}
 
 robot:
   robot:
     action_space: ${user.action_space}
-    state_publish_hz: 30
 
 policy:
   action_hz: ${user.action_hz}
@@ -61,9 +60,7 @@ data:
     name: ros_data
     wait_all_streams: true
     qos_depth: 10
-    # RealSense header.stamp uses device time; robot owner uses ROS clock.
-    # recv aligns live streams on message arrival time across ROS domains.
-    stamp_source: recv
+    stamp_source: header
     print_camera_timestamps: false
     print_camera_rates: false
     camera_rate_report_s: 2.0
@@ -98,6 +95,9 @@ scheduler:
 
 workflow:
   stop_on_done: true
+
+ros:
+  localhost_only: true
 
 hydra:
   job:

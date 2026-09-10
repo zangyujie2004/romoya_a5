@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from prometheus.sessions.hardware import HardwareSession
+from prometheus.utils.workflow import RunPaths, build_hardware_session
 
 
 def test_hardware_session_composes_runtime_components(tmp_path):
@@ -61,3 +62,46 @@ def test_hardware_session_composes_runtime_components(tmp_path):
     assert details["robot_owner"]["stopped"]
     assert details["robot_owner"]["closed"]
     assert details["sensors"]["camera"]["closed"]
+
+
+def test_noop_auto_resolves(tmp_path):
+    data = {
+        "robot": {
+            "_target_": "prometheus.nodes.robots.noop.resolve_robot",
+            "id": "noop",
+            "control_domain_id": 0,
+            "sensor_domain_id": 0,
+            "action_space": "noop_action",
+            "action_dim": 2,
+            "sensors": {},
+            "streams": {
+                "robot_state": {
+                    "topic": "/prometheus/noop/robot_state",
+                    "msg_type": "prometheus.noop.RobotState",
+                    "domain": "robot",
+                    "ros_domain_id": 0,
+                }
+            },
+        },
+        "hardware": {
+            "name": "hardware",
+            "mode": "owned",
+            "sensors": "auto",
+            "streams": "auto",
+        },
+    }
+    run = RunPaths(
+        run_id="test",
+        output_dir=tmp_path,
+        runtime_dir=tmp_path / "runtime",
+        manifest_path=tmp_path / "workflow_manifest.json",
+    )
+    session = build_hardware_session(
+        run=run,
+        hardware_cfg=data["hardware"],
+        robot_cfg=data["robot"],
+    )
+
+    assert session.robot["id"] == "noop"
+    assert session.sensors == {}
+    assert session.streams["robot_state"].ros_domain_id == 0

@@ -21,6 +21,7 @@ from prometheus.utils.workflow import (
 def run_from_config(cfg: Any) -> int:
     # Step 1: Resolve Hydra config into plain runtime sections.
     data = config_dict(cfg, "rollout_sync")
+    _apply_ros_config(data.get("ros"))
     run_cfg = section(data, "run")
     robot_cfg = section(data, "robot")
     task_cfg = section(data, "task")
@@ -244,6 +245,18 @@ def _wait_policy_inputs_ready(data_session: Any, policy: Any, timeout_s: float) 
         f"numpy_counts={data_session.numpy_counts()} "
         f"last_error={last_error!r}{skew_hint}"
     )
+
+
+def _apply_ros_config(raw_cfg: Any) -> None:
+    if raw_cfg is None:
+        return
+    if not isinstance(raw_cfg, dict):
+        raise ValueError("ros must be a mapping")
+    if "localhost_only" in raw_cfg:
+        enabled = bool(raw_cfg["localhost_only"])
+        os.environ["ROS_LOCALHOST_ONLY"] = "1" if enabled else "0"
+        if enabled:
+            os.environ.setdefault("ROS_AUTOMATIC_DISCOVERY_RANGE", "LOCALHOST")
 
 
 def _validate_policy_window(policy: Any, frames: list[Any]) -> None:

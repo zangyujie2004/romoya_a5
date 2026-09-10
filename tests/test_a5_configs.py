@@ -96,6 +96,53 @@ def test_collect_a5_uses_slave_arms_and_three_cameras(tmp_path):
     }.issubset(session.streams)
 
 
+def test_rollout_fm_uses_a5_collect_robot(tmp_path):
+    with initialize_config_dir(version_base=None, config_dir=str(CONFIG_DIR)):
+        cfg = compose(config_name="rollout_fm_sync")
+    data = OmegaConf.to_container(cfg, resolve=True)
+
+    assert data["robot"]["id"] == "a5_drag"
+    assert data["robot"]["robot"]["action_space"] == "abs_qpos"
+    assert data["robot"]["robot"]["state_publish_hz"] == 100
+    assert data["robot"]["robot"]["can"] == {"left": "can1", "right": "can3"}
+    assert data["user"]["n_action_steps"] == 128
+    assert data["user"]["use_memory"] is False
+    assert data["user"]["action_hz"] == 30.0
+    assert data["run"]["wait_ready_timeout_s"] == 15.0
+    assert data["data"]["bridge"]["stamp_source"] == "header"
+    assert data["robot"]["cameras"]["ir"] is False
+    assert data["robot"]["cameras"]["prepub_resize"] == 0.5
+    assert data["robot"]["cameras"]["serial_no"] == {
+        "base_0": "262622275297",
+        "left_wrist_0": "260322274232",
+        "right_wrist_0": "260422275259",
+    }
+    assert data["robot"]["tactile"]["serial_no"] == {
+        "left_wrist_0": "OG001596",
+        "left_wrist_1": "OG001595",
+        "right_wrist_0": "OG001593",
+        "right_wrist_1": "OG001594",
+    }
+
+    session = _session(data, tmp_path)
+    assert session.robot["driver"]["_target_"] == "prometheus.nodes.robots.a5.A5DragDriver"
+    assert session.robot["owner"]["hz"] == 100
+    assert session.robot["driver"]["hz"] == 100
+    assert session.sensors["realsense"]["enable_infra"] is False
+    assert "base_0_color" in session.streams
+    assert "left_wrist_0_tactile_flow" in session.streams
+    assert not any("infra1" in name or "infra2" in name for name in session.streams)
+
+
+def test_hardware_session_does_not_import_specific_hardware_types():
+    source = (Path(__file__).resolve().parents[1] / "prometheus" / "sessions" / "hardware.py").read_text()
+
+    assert "arx5" not in source
+    assert "a5" not in source
+    assert "realsense" not in source
+    assert "expand_robot_runtime" not in source
+
+
 def test_a5_four_key_pedal_requires_two_released_presses(monkeypatch):
     with initialize_config_dir(version_base=None, config_dir=str(CONFIG_DIR)):
         cfg = compose(config_name="collect_a5")
