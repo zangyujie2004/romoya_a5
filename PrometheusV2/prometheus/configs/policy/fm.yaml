@@ -1,0 +1,37 @@
+_target_: prometheus.policy.fm_policy.FMPolicy
+
+inputs:
+  anchor: base_0_color
+  slop_ms: 60.0
+  window_size: 8
+  stride: 1
+  wait_latest: true
+  wait_latest_timeout_ms: 5.0
+  stream_names:
+    - base_0_color
+    - left_wrist_0_color
+    - right_wrist_0_color
+    - robot_state
+    - left_eef
+    - right_eef
+  tactile_stream_names:
+    - left_wrist_0_tactile_flow
+    - left_wrist_1_tactile_flow
+    - right_wrist_0_tactile_flow
+    - right_wrist_1_tactile_flow
+
+inference:
+  run_dir: third_party/flow_matching/outputs/chahua_eef_vision
+  device: cuda
+  warmup: true
+  use_memory: true
+  memory_feed_hz: 30.0
+  memory_warning_lag_ms: 300.0
+  memory_max_lag_ms: 500.0
+  memory_ready_timeout_ms: 5000.0
+
+robot:
+  gripper_width_m: 0.082
+  gripper_names:
+    left: left_gripper
+    right: right_gripper

@@ -1,0 +1,78 @@
+_target_: prometheus.nodes.robots.a5.resolve_robot
+id: a5_drag
+control_domain_id: 21
+sensor_domain_id: 22
+
+robot:
+  # This workstation: reserve P cores for native SDK control threads.
+  control_cpu_affinity: [0, 1, 2, 3]
+  state_publish_hz: 100
+  action_space: abs_qpos
+  urdf_name: a5.urdf
+  # Total link6 mass used by the vendor gravity model. Increase it if an arm
+  # drops in gravity compensation; decrease it if the arm rises.
+  link6_mass_kg:
+    left: 0.76
+    right: 0.76
+  # Directional gripper torque bias in undocumented SDK units. Keep within
+  # [-0.1, 0.1], start at 0, and tune one side in 0.01 steps.
+  teach_gripper_torque:
+    left: 0.0
+    right: 0.0
+  # Captured in teach mode on 2026-09-06. Move here before normal shutdown so
+  # gravity-induced drop after motor disable has clearance.
+  shutdown_safe_position:
+    left: [-0.00767836, 0.00171661, -0.01231598, -0.16930453, -0.00083383, 0.03261662]
+    right: [0.00424513, 0.00362396, -0.01498627, -0.06973903, -0.00922616, -0.01735687]
+  shutdown_safe_max_velocity: 0.10
+  shutdown_safe_timeout_s: 60.0
+  shutdown_safe_settle_time_s: 0.3
+  # Two hardware runs settled 0.013-0.025 rad from the captured target. This
+  # accepts that repeatable controller offset while retaining a tight safe pose.
+  shutdown_safe_position_tolerance: 0.03
+  shutdown_safe_velocity_tolerance: 0.05
+  shutdown_safe_poll_interval_s: 0.02
+  dt: 0.01
+  feedback_timeout_s: 2.0
+  home_timeout_s: 25.0
+  home_command_grace_s: 0.5
+  home_settle_time_s: 0.5
+  home_velocity_tolerance: 0.05
+  home_position_tolerance: 0.005
+  home_poll_interval_s: 0.05
+  can:
+    left: can1
+    right: can3
+
+cameras:
+  capture_hz: 30
+  capture_width: 640
+  capture_height: 480
+  publish_hz: 30
+  ir: false
+  prepub_resize: 0.5
+  qos: reliable
+  camera_info: false
+  serial_no:
+    # Base was confirmed from a captured frame. Verify the two wrist labels by
+    # covering one lens before the first real collection run.
+    base_0: "262622275297"
+    left_wrist_0: "260322274232"
+    right_wrist_0: "260422275259"
+
+tactile:
+  publish_hz: 30
+  # Xense RGB difference frames are 700x400; publish and record them at 350x200.
+  # The 35x20 point-cloud flow stream is independent of this image resize.
+  prepub_resize: 0.5
+  publish_flow: true
+  publish_difference: true
+  publish_raw: false
+  require_gpu: true
+  # Bound ONNX CPU pools even when inference runs on GPU.
+  inference_threads: 1
+  serial_no:
+    left_wrist_0: "OG001596"
+    left_wrist_1: "OG001595"
+    right_wrist_0: "OG001593"
+    right_wrist_1: "OG001594"

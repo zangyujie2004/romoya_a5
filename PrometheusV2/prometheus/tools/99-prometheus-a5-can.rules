@@ -1,0 +1,11 @@
+# PrometheusV2 A5 USB2CAN mapping.
+# Device identity is based on the adapter serial number, not /dev/ttyACM order.
+#
+# Left slave  -> /dev/arxcan1 -> can1
+# Right slave -> /dev/arxcan3 -> can3
+# Left master -> /dev/arxcan5 -> can5 (adapter not assigned)
+# Right master -> /dev/arxcan7 -> can7 (adapter not assigned)
+
+# Replacement left arm: this adapter was previously assigned to arxcan5.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="16d0", ATTRS{idProduct}=="117e", ATTRS{serial}=="004700275547570820313031", SYMLINK+="arxcan1"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="16d0", ATTRS{idProduct}=="117e", ATTRS{serial}=="004600445547570820313031", SYMLINK+="arxcan3"

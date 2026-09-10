@@ -1,0 +1,29 @@
+name: event
+mode: owned
+input_source: pedal,tty
+
+semantics:
+  0: record_start
+  1: record_stop
+  2: event_mark
+
+pedal:
+  device: /dev/input/prometheus-pedal
+  confirm_presses: 2
+  confirm_window_s: 1.0
+  debounce_s: 0.25
+  poll_timeout_s: 0.02
+  # First two physical keys emit KEY_1 and KEY_2; other keys are unassigned.
+  pedal_map:
+    2: 0
+    3: 1
+
+tty:
+  confirm_presses: 2
+  confirm_window_s: 1.0
+  debounce_s: 0.25
+  poll_timeout_s: 0.02
+  key_map:
+    a: 0
+    b: 1
+    c: 2

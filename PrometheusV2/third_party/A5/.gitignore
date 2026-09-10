@@ -1,0 +1,8 @@
+.history
+.vscode/
+**build
+**install
+**log
+**devel
+**pycache**
+**api

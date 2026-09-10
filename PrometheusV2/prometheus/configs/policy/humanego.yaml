@@ -1,0 +1,33 @@
+_target_: prometheus.policy.humanego_policy.HumanEgoPolicy
+
+remote:
+  server: ws://127.0.0.1:2171
+  max_size: 134217728
+  ssh_tunnel:
+    enabled: false
+
+inputs:
+  anchor: d405_color
+  slop_ms: 100.0
+  base_names:
+    - robot_state
+    - left_eef
+    - right_eef
+    - d405_color
+    - d405_color_info
+  init_names:
+    - robot_state
+    - left_eef
+    - right_eef
+    - d405_color
+    - d405_color_info
+    - d405_infra1
+    - d405_infra2
+    - d405_infra1_info
+    - d405_infra2_info
+
+robot:
+  gripper_width_m: 0.082
+  gripper_names:
+    left: left_gripper
+    right: right_gripper

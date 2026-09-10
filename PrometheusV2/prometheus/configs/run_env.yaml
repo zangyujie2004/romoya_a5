@@ -1,0 +1,83 @@
+defaults:
+  - robot: x5_1_fm
+  - task: default
+  - _self_
+
+user:
+  task_id: default
+  env_root: /home/wujie/workspace/raw_data/prometheus_env
+  dry_run: false
+  action_space: abs_eef
+  action_hz: 30.0
+
+task:
+  id: ${user.task_id}
+
+run:
+  id: ${now:%Y%m%d_%H%M%S_%f}
+  output_dir: ${user.env_root}/${task.id}/${run.id}
+  runtime_dir: ${run.output_dir}/runtime
+  wait_ready_timeout_s: 5.0
+
+robot:
+  robot:
+    action_space: ${user.action_space}
+    state_publish_hz: 30
+
+hardware:
+  name: hardware
+  mode: owned
+  sensors: auto
+  streams: auto
+
+data:
+  name: data
+  mode: owned
+  history: 64
+  bridge:
+    enabled: true
+    name: ros_data
+    wait_all_streams: true
+    qos_depth: 10
+    stamp_source: recv
+    print_camera_timestamps: false
+    print_camera_rates: false
+  numpy:
+    enabled: true
+    history: 64
+    recording:
+      enabled: false
+  timing:
+    enabled: true
+    path: ${run.runtime_dir}/data_timing.jsonl
+  recording:
+    enabled: false
+    output_dir: ${run.output_dir}/data
+    episode_id: "0000"
+    queue_size: 4096
+    fps: 30.0
+    default_event_value: 0
+    enable_plots: true
+
+env:
+  addr: tcp://127.0.0.1:5555
+  default_obs_keys: [robot/qpos]
+  ready_obs_keys: [robot/qpos]
+  action_hz: ${user.action_hz}
+  max_chunk_horizon: 64
+  policy_low_watermark: 0
+  reset_timeout_s: 5.0
+  step_timeout_s: 5.0
+  send_timeout_s: 3.0
+  send_wait: false
+  dry_run: ${user.dry_run}
+  action_log_interval: 1
+  action_rewriter:
+    _target_: prometheus.runtime.scheduler.replace_pending
+    _partial_: true
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: outputs/hydra/run_env/${run.id}

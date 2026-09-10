@@ -1,0 +1,15 @@
+__pycache__/
+.pytest_cache/
+*.egg-info/
+outputs/
+.codex/
+.agents/
+
+
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+**/*.zarr/
+**/policy_latent_cache.zarr/
+docs/

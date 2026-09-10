@@ -1,0 +1,44 @@
+defaults:
+  - robot: x5_1_fm
+  - policy: fm
+  - task: default
+  - _self_
+
+user:
+  # Operators should normally only edit this block.
+  task_id: default
+  policy_run_dir: /home/wujie/workspace/inference/PrometheusV2/third_party/flow_matching/outputs/test3/chahua_all_eef_v3_rel
+  steps: 30
+  action_space: abs_eef
+  action_hz: 30.0
+  n_action_steps: 32
+
+task:
+  id: ${user.task_id}
+
+client:
+  addr: tcp://127.0.0.1:5555
+  max_steps: ${user.steps}
+  print_every: 1
+  latency_log: /tmp/prometheus_zmq_policy_latency.jsonl
+  # "auto" uses policy._active_stream_names() or policy.stream_names.
+  obs_keys: auto
+  expect:
+    action_space: ${user.action_space}
+    action_hz: ${user.action_hz}
+    action_chunk_horizon: ${user.n_action_steps}
+    policy_low_watermark: 0
+
+policy:
+  action_hz: ${user.action_hz}
+  inference:
+    run_dir: ${user.policy_run_dir}
+    n_action_steps: ${user.n_action_steps}
+  robot:
+    gripper_width_m: ${robot.robot.gripper_width_m}
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: outputs/hydra/zmq_policy_client/${now:%Y%m%d_%H%M%S_%f}

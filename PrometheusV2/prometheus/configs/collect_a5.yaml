@@ -1,0 +1,102 @@
+defaults:
+  - robot: a5_drag
+  - task: default
+  - event: record_drag_four_key_pedal
+  - _self_
+
+user:
+  task_id: egg_0910_100
+  collect_root: ${oc.env:HOME}/workspace/raw_data
+  log_root: /tmp/prometheus_logs
+  max_episodes: 25
+
+task:
+  id: ${user.task_id}
+
+ros:
+  localhost_only: true
+
+run:
+  id: ${now:%Y%m%d_%H%M%S_%f}
+  output_dir: ${user.log_root}/collect_a5/${task.id}/${run.id}
+  runtime_dir: ${run.output_dir}/runtime
+  wait_ready_timeout_s: 15.0
+
+hardware:
+  name: hardware
+  mode: owned
+  sensors: auto
+  streams: auto
+
+data:
+  name: data
+  mode: owned
+  history: 32
+  bridge:
+    enabled: true
+    name: ros_data
+    wait_all_streams: true
+    qos_depth: 10
+    sensor_qos: reliable
+    stamp_source: header
+    print_camera_timestamps: false
+    print_camera_rates: false
+  numpy:
+    enabled: false
+  recording:
+    enabled: true
+    output_dir: ${user.collect_root}/${task.id}
+    queue_size: 4096
+    fps: 30.0
+    default_event_value: null
+    enable_plots: true
+    joint_plot_ranges:
+      - [-3.14, 3.14]
+      - [-3.14, 3.14]
+      - [-3.14, 3.14]
+      - [-3.14, 3.14]
+      - [-3.14, 3.14]
+      - [-3.14, 3.14]
+      - [-3.14, 3.14]
+
+event:
+  name: event
+  mode: owned
+  input_source: pedal,tty
+
+workflow:
+  # This workstation: sensor, preview and recording workload on E cores.
+  data_cpu_affinity: [8, 9, 10, 11, 12, 13, 14, 15]
+  max_episodes: ${user.max_episodes}
+  event_wait_timeout_s: 0.1
+  reset_after_episode:
+    enabled: true
+    timeout_s: 30.0
+    on_shutdown: false
+  shutdown_safe_pose:
+    enabled: true
+    timeout_s: 65.0
+  preview:
+    enabled: true
+    mode: local
+    window: Prometheus A5 Collection Preview
+    width: 1280
+    height: 720
+    fps: 20
+    stale_timeout_s: 1.0
+    show_tactile: true
+    # Preview-only filter: remove sub-0.5 mm noise, apply a 3x3 median, and
+    # keep a stable 0-10 mm color scale across frames. Raw flow is unchanged.
+    tactile_noise_floor_m: 0.0005
+    tactile_max_deformation_m: 0.01
+    tactile_median_kernel: 3
+    host: 127.0.0.1
+    port: 7860
+    refresh_ms: 100
+  events: []
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: outputs/hydra/collect_a5/${run.id}

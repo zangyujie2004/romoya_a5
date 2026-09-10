@@ -1,0 +1,17 @@
+defaults:
+  - pedal_base
+
+name: event
+mode: owned
+input_source: pedal
+
+semantics:
+  0: pause
+  1: teaching
+  2: cycle
+
+pedal:
+  confirm_presses: 1
+
+tty:
+  confirm_presses: 1
