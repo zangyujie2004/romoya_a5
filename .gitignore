@@ -21,3 +21,8 @@ outputs/**/*.pt
 /pretrained_weights/
 _reference/
 /tests/
+.ruff_cache/
+/configs/train/
+/configs/finetune/
+scripts/run/
+.nfs*

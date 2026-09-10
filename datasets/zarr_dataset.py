@@ -243,12 +243,13 @@ class ZarrDataset(Dataset):
 
         if self.fit_normalizer:
             print("[ZarrDataset] fitting normalizer on full windows...")
-            self.normalizer = DatasetNormalizer.build(
-                self,
-                output_range=self.norm_output_range,
-                max_windows=self.normalizer_max_windows,
+            self.set_normalizer(
+                DatasetNormalizer.build(
+                    self,
+                    output_range=self.norm_output_range,
+                    max_windows=self.normalizer_max_windows,
+                )
             )
-            self._precompute_normalized_actions()
         else:
             self.normalizer = None
             self.cached_norm_action = None
@@ -727,6 +728,15 @@ class ZarrDataset(Dataset):
             )
         return feat
 
+    def set_normalizer(self, normalizer: DatasetNormalizer, *, precompute: bool = True) -> None:
+        """Attach stats and optionally rebuild the per-window normalized action cache."""
+        self.normalizer = normalizer
+        self.fit_normalizer = True
+        if precompute:
+            self._precompute_normalized_actions()
+        else:
+            self.cached_norm_action = None
+
     def _precompute_normalized_actions(self) -> None:
         n = len(self.windows)
         if n == 0 or self.normalizer is None:
@@ -1085,15 +1095,20 @@ def build_dataloader(
     pin_memory: bool = True,
     persistent_workers: bool | None = None,
     prefetch_factor: int = 2,
+    sampler=None,
 ) -> DataLoader:
     """Standard DataLoader for ZarrDataset; default collate handles nested obs dict."""
     kwargs: Dict[str, Any] = {
         "batch_size": batch_size,
-        "shuffle": shuffle,
         "num_workers": num_workers,
         "drop_last": drop_last,
         "pin_memory": pin_memory,
     }
+    if sampler is not None:
+        kwargs["sampler"] = sampler
+        kwargs["shuffle"] = False
+    else:
+        kwargs["shuffle"] = shuffle
     if num_workers > 0:
         kwargs["persistent_workers"] = (
             persistent_workers if persistent_workers is not None else True

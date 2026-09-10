@@ -13,8 +13,14 @@ def main() -> None:
     parser.add_argument(
         "--config",
         type=str,
-        default="configs/config.yaml",
+        default="configs/train/config.yaml",
         help="Path to training config yaml",
+    )
+    parser.add_argument(
+        "--amp",
+        choices=("off", "fp16", "bf16"),
+        default=None,
+        help="Override train.mixed_precision from the config",
     )
     args = parser.parse_args()
 
@@ -24,6 +30,9 @@ def main() -> None:
         config_path = policy_root / config_path
 
     cfg = load_config(str(config_path))
+    if args.amp is not None:
+        cfg["train"] = dict(cfg["train"])
+        cfg["train"]["mixed_precision"] = args.amp
     cfg = apply_resolved_latent_cache_root_dir(cfg)
     train_main(cfg)
 
