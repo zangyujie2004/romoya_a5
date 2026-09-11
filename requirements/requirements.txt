@@ -1,4 +1,6 @@
 numpy>=1.24.0,<2.0.0
+pyzmq>=25
+msgpack>=1.0
 PyYAML>=6.0
 tqdm>=4.66.0
 timm>=0.9.12

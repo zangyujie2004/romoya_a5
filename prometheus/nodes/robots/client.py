@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import uuid
+import zmq
 import time
 from typing import Any
 
@@ -13,7 +15,7 @@ from prometheus.nodes.robots.control import (
 
 
 class RobotControlClient:
-    """Small ROS client for sending actions to a robot owner."""
+    """Small ZMQ client for sending actions to a robot owner."""
 
     def __init__(
         self,
@@ -29,10 +31,8 @@ class RobotControlClient:
         qos_depth: int = 10,
         retry_interval_s: float = 0.25,
     ):
-        import rclpy
-        from rclpy.executors import SingleThreadedExecutor
-        from rclpy.node import Node
-        from std_msgs.msg import String
+        from prometheus.transport.local import Context, SingleThreadedExecutor, Node
+        from prometheus.transport.messages import String
 
         class _Node(Node):
             pass
@@ -46,25 +46,24 @@ class RobotControlClient:
         if not result_topic:
             raise ValueError("result_topic must be non-empty")
 
-        self.rclpy = rclpy
         self.String = String
         self.action_space = str(action_space)
         self.action_dims = {self.action_space: int(action_dim)}
         self.control_topic = str(control_topic)
         self.result_topic = str(result_topic)
         self.ros_domain_id = None if ros_domain_id is None else int(ros_domain_id)
-        self.command_source = command_source or default_command_source()
+        self.command_source = command_source or f"{default_command_source()}:{uuid.uuid4().hex}"
         self.retry_interval_s = float(retry_interval_s)
         self.request_id = ""
         self.result: dict[str, Any] | None = None
         self._seq = 0
+        self._request_session_id = uuid.uuid4().hex
         self._owns_node = node is None
         self._context: Any | None = None
         self._closed = False
 
         if node is None:
-            self._context = rclpy.Context()
-            rclpy.init(args=None, context=self._context, domain_id=self.ros_domain_id)
+            self._context = Context(domain_id=self.ros_domain_id)
             self.node = _Node(node_name, context=self._context)
         else:
             self.node = node
@@ -72,8 +71,13 @@ class RobotControlClient:
         self.executor = SingleThreadedExecutor(context=self._context)
         self.executor.add_node(self.node)
 
-        self.pub = self.node.create_publisher(String, self.control_topic, int(qos_depth))
-        self.node.create_subscription(String, self.result_topic, self._result_cb, int(qos_depth))
+        try:
+            self.pub = self.node.create_publisher(String, self.control_topic, int(qos_depth), command=True)
+            self.node.create_subscription(String, self.result_topic, self._result_cb, int(qos_depth))
+        except BaseException:
+            if self._owns_node:
+                self.node.destroy_node()
+            raise
 
     def __enter__(self) -> RobotControlClient:
         return self
@@ -193,6 +197,7 @@ class RobotControlClient:
     def status(self) -> dict[str, Any]:
         return {
             "type": type(self).__name__,
+            "transport": "zmq",
             "action_space": self.action_space,
             "ros_domain_id": self.ros_domain_id,
             "control_topic": self.control_topic,
@@ -210,7 +215,7 @@ class RobotControlClient:
         if self._owns_node:
             self.node.destroy_node()
         if self._owns_node and self._context is not None and self._context.ok():
-            self.rclpy.shutdown(context=self._context)
+            self._context.shutdown()
         self._closed = True
 
     def _request(
@@ -222,8 +227,9 @@ class RobotControlClient:
     ) -> dict[str, Any] | None:
         self._seq += 1
         request = {
-            "request_id": f"{self.command_source}:{self._seq}",
+            "request_id": f"{self.command_source}:{self._request_session_id}:{self._seq}",
             "client_stamp_ns": time.time_ns(),
+            "expires_ns": time.time_ns() + int(float(timeout) * 1_000_000_000),
             **payload,
         }
         validate_control_payload(request)
@@ -243,7 +249,10 @@ class RobotControlClient:
         while self._context_ok() and self.result is None and time.monotonic() < deadline:
             now = time.monotonic()
             if now >= next_publish:
-                self.pub.publish(msg)
+                try:
+                    self.pub.publish(msg)
+                except zmq.Again:
+                    pass  # disconnected/backpressure; retry until the request deadline
                 next_publish = now + self.retry_interval_s
             self.spin_once(0.05)
         if self.result is None:
@@ -258,4 +267,4 @@ class RobotControlClient:
     def _context_ok(self) -> bool:
         if self._context is not None:
             return bool(self._context.ok())
-        return bool(self.rclpy.ok())
+        return not self._closed

@@ -22,7 +22,6 @@ DEFAULT_CAMERA_TIMESTAMP_STREAMS = (
 @dataclass
 class _DomainRuntime:
     domain_id: int | None
-    rclpy: Any
     context: Any
     node: Any
     executor: Any
@@ -30,14 +29,14 @@ class _DomainRuntime:
     thread: threading.Thread
 
 
-class RosDataBridge:
-    """Ingress ROS topic samples into one DataSession."""
+class ZmqDataBridge:
+    """Ingress ZMQ topic samples into one DataSession."""
 
     def __init__(
         self,
         *,
         data: DataSession,
-        name: str = "ros_data",
+        name: str = "zmq_data",
         wait_all_streams: bool = True,
         qos_depth: int = 10,
         sensor_qos: str = "sensor",
@@ -74,7 +73,7 @@ class RosDataBridge:
         if self._started:
             return
         if not self._stream_groups:
-            raise ValueError("RosDataBridge requires at least one data stream")
+            raise ValueError("ZmqDataBridge requires at least one data stream")
         self._stop.clear()
         self._error = ""
         try:
@@ -88,7 +87,7 @@ class RosDataBridge:
 
     def wait_ready(self, timeout_s: float) -> None:
         if not self._started:
-            raise RuntimeError("RosDataBridge has not been started")
+            raise RuntimeError("ZmqDataBridge has not been started")
         deadline = time.monotonic() + float(timeout_s)
         names = tuple(self.data.streams)
         while time.monotonic() < deadline:
@@ -97,7 +96,7 @@ class RosDataBridge:
                 return
             time.sleep(SPIN_TIMEOUT_S)
         counts = self.data.counts()
-        raise TimeoutError(f"timed out waiting for ROS data streams: counts={counts}")
+        raise TimeoutError(f"timed out waiting for ZMQ data streams: counts={counts}")
 
     def stop(self) -> None:
         if not self._started and not self._runtimes:
@@ -117,6 +116,7 @@ class RosDataBridge:
     def status(self) -> dict[str, Any]:
         return {
             "type": type(self).__name__,
+            "transport": "zmq",
             "name": self.name,
             "started": self._started,
             "closed": self._closed,
@@ -133,13 +133,10 @@ class RosDataBridge:
         }
 
     def _start_domain(self, domain_id: int | None, streams: list[DataStream]) -> _DomainRuntime:
-        import rclpy
-        from rclpy.executors import SingleThreadedExecutor
-        from rclpy.node import Node
-        from rclpy.qos import qos_profile_sensor_data
+        from prometheus.transport.local import Context, SingleThreadedExecutor, Node
+        qos_profile_sensor_data = 5
 
-        context = rclpy.Context()
-        rclpy.init(args=None, context=context, domain_id=domain_id)
+        context = Context(domain_id=domain_id)
         node = Node(_node_name(self.name, domain_id), context=context)
         executor = SingleThreadedExecutor(context=context)
         executor.add_node(node)
@@ -161,7 +158,7 @@ class RosDataBridge:
             executor.shutdown()
             node.destroy_node()
             if context.ok():
-                rclpy.shutdown(context=context)
+                context.shutdown()
             raise
 
         thread = threading.Thread(
@@ -171,7 +168,7 @@ class RosDataBridge:
             daemon=True,
         )
         thread.start()
-        return _DomainRuntime(domain_id, rclpy, context, node, executor, subscriptions, thread)
+        return _DomainRuntime(domain_id, context, node, executor, subscriptions, thread)
 
     def _spin(self, domain_id: int | None, context: Any, executor: Any) -> None:
         try:
@@ -186,7 +183,7 @@ class RosDataBridge:
         runtime.executor.shutdown()
         runtime.node.destroy_node()
         if runtime.context.ok():
-            runtime.rclpy.shutdown(context=runtime.context)
+            runtime.context.shutdown()
 
     def _raise_if_failed(self) -> None:
         with self._lock:
@@ -205,7 +202,7 @@ class RosDataBridge:
                 metadata={
                     "bridge_callback_ns": callback_ns,
                     "subscriber_recv_ns": callback_ns,
-                    "publish_ros_ns": header_stamp_ns,
+                    "publish_stamp_ns": header_stamp_ns,
                     "publish_wall_estimate_ns": header_stamp_ns,
                     "publish_wall_estimate_source": "msg.header.stamp",
                 },
@@ -287,6 +284,8 @@ class _CameraRatePrinter:
 
 def import_message_type(path: str) -> Any:
     module_name, class_name = str(path).rsplit(".", 1)
+    if module_name in {"sensor_msgs.msg", "std_msgs.msg", "geometry_msgs.msg"}:
+        module_name = "prometheus.transport.messages"
     module = importlib.import_module(module_name)
     return getattr(module, class_name)
 
@@ -317,3 +316,6 @@ def _domain_key(domain_id: int | None) -> str:
 def _node_name(name: str, domain_id: int | None) -> str:
     raw = f"{name}_{_domain_key(domain_id)}"
     return "".join(char if char.isalnum() else "_" for char in raw)
+
+
+RosDataBridge = ZmqDataBridge  # Legacy import alias; always uses ZMQ.

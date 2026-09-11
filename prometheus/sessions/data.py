@@ -91,9 +91,9 @@ class DataSession(BaseSession):
             self.timing.start()
             self.numpy.start()
             if self.streams and bool(self.bridge_config["enabled"]):
-                from prometheus.nodes.data_bridge import RosDataBridge
+                from prometheus.nodes.data_bridge import ZmqDataBridge
 
-                self._bridge = RosDataBridge(
+                self._bridge = ZmqDataBridge(
                     data=self,
                     name=str(self.bridge_config["name"]),
                     wait_all_streams=bool(self.bridge_config["wait_all_streams"]),
@@ -183,7 +183,7 @@ class DataSession(BaseSession):
         sample_metadata = dict(metadata or {})
         sample_metadata.setdefault("subscriber_recv_ns", recv)
         sample_metadata.setdefault("ingest_start_ns", ingest_start_ns)
-        sample_metadata.setdefault("publish_ros_ns", msg_stamp_ns(msg))
+        sample_metadata.setdefault("publish_stamp_ns", msg_stamp_ns(msg))
         sample = DataSample(
             name=name,
             msg=msg,
@@ -202,9 +202,9 @@ class DataSession(BaseSession):
             fields={
                 **dict(sample.metadata),
                 "recv_to_buffer_ms": (buffer_append_ns - sample.recv_ns) / 1_000_000.0,
-                "publish_ros_to_recv_ms": (
-                    (sample.recv_ns - int(sample.metadata["publish_ros_ns"])) / 1_000_000.0
-                    if int(sample.metadata.get("publish_ros_ns", 0)) > 0
+                "publish_to_recv_ms": (
+                    (sample.recv_ns - int(sample.metadata["publish_stamp_ns"])) / 1_000_000.0
+                    if int(sample.metadata.get("publish_stamp_ns", 0)) > 0
                     else None
                 ),
             },

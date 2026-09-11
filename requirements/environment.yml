@@ -13,13 +13,7 @@ dependencies:
   - py-opencv=4.11
   - pytest>=8
   - websockets>=12
-  - ros-jazzy-rclpy
-  - ros-jazzy-sensor-msgs
-  - ros-jazzy-sensor-msgs-py
-  - ros-jazzy-geometry-msgs
-  - ros-jazzy-std-msgs
-  - ros-jazzy-cv-bridge
-  - ros-jazzy-rmw-cyclonedds-cpp
+  # Vendor A5 SDK still links KDL parser libraries; framework IPC uses ZMQ.
   - ros-jazzy-kdl-parser
   - pyzmq
   - scipy

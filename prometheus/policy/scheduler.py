@@ -137,6 +137,9 @@ class ActionScheduler:
         wait: bool = True,
         timeout_s: float = 3.0,
         history: int = 1024,
+        max_velocity: list[float] | None = None,
+        max_acceleration: list[float | None] | None = None,
+        interpolation_hz: float = 50.0,
     ):
         if history <= 0:
             raise ValueError("history must be positive")
@@ -147,6 +150,24 @@ class ActionScheduler:
         self.history: deque[np.ndarray] = deque(maxlen=int(history))
         self._filters: dict[str, ActionFilter] = {}
         self._previous_action: np.ndarray | None = None
+        self.max_velocity = None if max_velocity is None else np.asarray(max_velocity, dtype=np.float64)
+        if self.max_velocity is not None and (
+            self.max_velocity.ndim != 1 or not self.max_velocity.size
+            or not np.all(np.isfinite(self.max_velocity)) or np.any(self.max_velocity <= 0)
+        ):
+            raise ValueError("max_velocity must be a finite positive vector")
+        self.max_acceleration = None
+        if max_acceleration is not None:
+            limits = np.asarray([np.inf if value is None else value for value in max_acceleration], dtype=np.float64)
+            if (self.max_velocity is None or limits.shape != self.max_velocity.shape
+                    or any(value is not None and (not np.isfinite(value) or value <= 0)
+                           for value in max_acceleration)):
+                raise ValueError("max_acceleration must match max_velocity with positive finite values or null")
+            self.max_acceleration = limits
+        if not np.isfinite(interpolation_hz) or interpolation_hz <= 0:
+            raise ValueError("interpolation_hz must be finite and positive")
+        self.interpolation_hz = float(interpolation_hz)
+        self.actions_processed = 0
         for item in filters or []:
             self.add_filter(item)
 
@@ -168,6 +189,7 @@ class ActionScheduler:
 
     def reset(self) -> None:
         self._previous_action = None
+        self.actions_processed = 0
         for item in self._filters.values():
             item.reset()
 
@@ -185,6 +207,8 @@ class ActionScheduler:
             )
         if self._previous_action is None:
             self._previous_action = self._current_action_from_metadata(chunk)
+        if self.max_velocity is not None:
+            return self._execute_limited(chunk, steps=steps, on_action=on_action)
         n_steps = chunk.horizon if steps is None else min(int(steps), chunk.horizon)
         if n_steps <= 0:
             raise ValueError("steps must be positive")
@@ -200,12 +224,85 @@ class ActionScheduler:
                 on_action(action.copy(), context)
             self._previous_action = action.copy()
             self.history.append(action.copy())
+            self.actions_processed += 1
             sent += 1
 
             next_time += chunk.dt
             delay = next_time - time.monotonic()
             if delay > 0 and index + 1 < n_steps:
                 self._spin_sleep(delay)
+        return sent
+
+    def seed_current_action(self, current: Any) -> None:
+        value = np.asarray(current, dtype=np.float32)
+        if value.ndim != 1 or not np.all(np.isfinite(value)):
+            raise ValueError("current joint feedback must be a finite vector")
+        self._previous_action = value.copy()
+
+    def _execute_limited(self, chunk, *, steps, on_action):
+        if chunk.action_space != "abs_qpos":
+            raise ValueError("velocity interpolation requires abs_qpos")
+        if self._previous_action is None:
+            raise ValueError("velocity interpolation requires current joint feedback")
+        if self.max_velocity.shape != (chunk.action_dim,) or self._previous_action.shape != (chunk.action_dim,):
+            raise ValueError("velocity limits and current feedback must match action dimensions")
+        n_steps = chunk.horizon if steps is None else min(int(steps), chunk.horizon)
+        if n_steps <= 0:
+            raise ValueError("steps must be positive")
+        if self.max_acceleration is not None and np.any(np.isfinite(self.max_acceleration)):
+            return self._execute_acceleration_limited(chunk, n_steps, on_action)
+        sent = 0
+        for index in range(n_steps):
+            start = self._previous_action.astype(np.float64)
+            context = ActionContext(chunk, index, self._previous_action.copy())
+            target = self._apply_filters(chunk.actions[index].copy(), context).astype(np.float64)
+            duration = max(chunk.dt, float(np.max(np.abs(target - start) / self.max_velocity)))
+            ticks = max(1, int(np.ceil(duration * self.interpolation_hz)))
+            interval = duration / ticks
+            output_chunk = ActionChunk([target], action_space=chunk.action_space, hz=1.0 / interval)
+            for tick in range(1, ticks + 1):
+                # Relative waits prevent bursts of catch-up commands after delays.
+                self._spin_sleep(interval)
+                action = (start + (target - start) * (tick / ticks)).astype(np.float32)
+                self._send(action)
+                self._previous_action = action.copy()
+                self.history.append(action.copy())
+                self.actions_processed += 1
+                sent += 1
+                if on_action is not None:
+                    on_action(action.copy(), ActionContext(output_chunk, index, context.previous_action))
+        return sent
+
+    def _execute_acceleration_limited(self, chunk, n_steps, on_action):
+        from prometheus.policy.trajectory import plan_acceleration_limited
+
+        previous = self._previous_action.copy()
+        targets = []
+        for index in range(n_steps):
+            target = self._apply_filters(chunk.actions[index].copy(), ActionContext(chunk, index, previous))
+            targets.append(target.copy())
+            previous = target.copy()
+        segments = plan_acceleration_limited(
+            self._previous_action, np.asarray(targets), self.max_velocity,
+            self.max_acceleration, chunk.dt,
+        )
+        sent = 0
+        for index, segment in enumerate(segments):
+            ticks = max(1, int(np.ceil(segment.duration * self.interpolation_hz)))
+            interval = segment.duration / ticks
+            output_chunk = ActionChunk([segment.target], action_space=chunk.action_space, hz=1.0 / interval)
+            for tick in range(1, ticks + 1):
+                # Do not catch up in a burst after a delayed send/acknowledgement.
+                self._spin_sleep(interval)
+                action = (segment.target if tick == ticks else segment.position(tick / ticks)).astype(np.float32)
+                previous = self._previous_action.copy()
+                self._send(action)
+                self._previous_action = action.copy()
+                self.history.append(action.copy())
+                self.actions_processed += 1
+                sent += 1
+                if on_action is not None:
+                    on_action(action.copy(), ActionContext(output_chunk, index, previous))
         return sent
 
     def _apply_filters(self, action: np.ndarray, context: ActionContext) -> np.ndarray:

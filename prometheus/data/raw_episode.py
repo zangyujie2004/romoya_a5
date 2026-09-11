@@ -868,7 +868,7 @@ def image_to_array(msg: Any) -> tuple[np.ndarray, str]:
     width = int(getattr(msg, "width"))
     channels = {"mono8": 1, "8uc1": 1, "rgb8": 3, "bgr8": 3}.get(encoding)
     if channels is None:
-        raise ValueError(f"unsupported ROS image encoding {encoding!r}")
+        raise ValueError(f"unsupported image encoding {encoding!r}")
     step = int(getattr(msg, "step", width * channels))
     data = getattr(msg, "data")
     raw = np.frombuffer(data if isinstance(data, (bytes, bytearray, memoryview)) else bytes(data), dtype=np.uint8)
@@ -886,7 +886,7 @@ def pointcloud_to_array(msg: Any) -> np.ndarray:
         fields = tuple(field.name for field in getattr(msg, "fields", ()))
         if fields != TACTILE_POINT_FIELDS:
             raise ValueError(f"Tactile PointCloud2 fields must be {TACTILE_POINT_FIELDS}, got {fields}")
-        import sensor_msgs_py.point_cloud2 as pc2
+        from prometheus.transport import messages as pc2
 
         points = pc2.read_points(msg, field_names=TACTILE_POINT_FIELDS, skip_nans=False)
         if isinstance(points, np.ndarray) and points.dtype.fields:

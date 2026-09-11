@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+from prometheus.transport.local import configure as configure_transport
+
 import os
 import time
 import threading
 from typing import Any
 
+import numpy as np
+
 from prometheus.policy.fm_policy import MemoryHealthError
+from prometheus.policy.scheduler import ActionChunk
+from prometheus.policy.smoothing import PolicyActionSmoother
 from prometheus.sessions.policy import PolicySession
+from prometheus.utils.cpu_affinity import configure_process_cpu_affinity
 from prometheus.utils.workflow import (
     build_data_session,
     build_hardware_session,
@@ -21,7 +28,7 @@ from prometheus.utils.workflow import (
 def run_from_config(cfg: Any) -> int:
     # Step 1: Resolve Hydra config into plain runtime sections.
     data = config_dict(cfg, "rollout_sync")
-    _apply_ros_config(data.get("ros"))
+    configure_transport(data.get("transport"))
     run_cfg = section(data, "run")
     robot_cfg = section(data, "robot")
     task_cfg = section(data, "task")
@@ -31,6 +38,13 @@ def run_from_config(cfg: Any) -> int:
     policy_session_cfg = section(data, "policy_session")
     scheduler_cfg = section(data, "scheduler")
     workflow_cfg = section(data, "workflow")
+    action_smoother = PolicyActionSmoother(**workflow_cfg.get("action_smoothing", {}))
+    # Apply before model loading and session creation so their workers inherit
+    # the data CPU set. A5 connect separately assigns its SDK control threads.
+    data_cpu_affinity = workflow_cfg.get("data_cpu_affinity")
+    configure_process_cpu_affinity(data_cpu_affinity)
+    if data_cpu_affinity is not None:
+        print(f"[rollout_sync] data / inference CPU affinity: {sorted(os.sched_getaffinity(0))}", flush=True)
     run = prepare_run(run_cfg)
     run.runtime_dir.mkdir(parents=True, exist_ok=True)
     os.environ["PROMETHEUS_CAMERA_TIMING_TRACE"] = str(run.runtime_dir / "camera_publish_timing.jsonl")
@@ -71,6 +85,7 @@ def run_from_config(cfg: Any) -> int:
         robot_client = hardware.robot_client
         scheduler = instantiate_config(scheduler_cfg, "scheduler", robot_client=robot_client)
         scheduler.reset()
+        _open_grippers_before_policy(hardware, scheduler, workflow_cfg)
         if data_session.recording_enabled:
             recording_cfg = section(data_cfg, "recording")
             data_session.start_episode(
@@ -82,7 +97,16 @@ def run_from_config(cfg: Any) -> int:
         while chunks < steps:
             robot_client.spin_once(0.0)
             chunk = policy_session.policy.infer(data_session) 
+            if chunks == 0 and (scheduler.max_velocity is not None or action_smoother.enabled):
+                current = hardware.robot_driver.read_state().qpos
+                if scheduler.max_velocity is not None:
+                    scheduler.seed_current_action(current)
+                if action_smoother.enabled:
+                    action_smoother.reset(current)
+                    print(f"[rollout_sync] Policy action smoothing: {action_smoother.status()}", flush=True)
             data_session.record_policy_action_chunk(chunk, metadata={"chunk_index": chunks})
+            chunk = _prepare_policy_chunk(hardware, chunk)
+            chunk = action_smoother.apply(chunk)
             actions_sent += scheduler.execute(
                 chunk,
                 on_action=_record_action(data_session, chunks) if data_session.recording_enabled else None,
@@ -113,6 +137,23 @@ def run_from_config(cfg: Any) -> int:
         return_code = 1
         raise
     finally:
+        shutdown_gripper_error = ""
+        if scheduler is not None and status in {"completed", "interrupted"}:
+            try:
+                # The ZMQ owner remains running until the opening command has
+                # completed and both grippers have settled at their targets.
+                _open_grippers_after_policy(hardware, scheduler, workflow_cfg)
+            except (Exception, KeyboardInterrupt) as exc:
+                shutdown_gripper_error = repr(exc)
+                status = "error"
+                stop_reason = "shutdown_gripper_open_failed"
+                print(f"[rollout_sync] Gripper opening failed: {exc!r}; skipping return motion.", flush=True)
+        shutdown_pose = _return_to_shutdown_pose(hardware, workflow_cfg, scheduler, status)
+        if shutdown_pose.get("status") == "error":
+            status = "error"
+            stop_reason = "shutdown_return_failed"
+        if scheduler is not None:
+            actions_sent = scheduler.actions_processed
         # Step 6: Freeze data ingress, then let robot cleanup/reset and data finalization overlap.
         try:
             data_session.stop_ingress()
@@ -131,6 +172,9 @@ def run_from_config(cfg: Any) -> int:
                 "run_id": run.run_id,
                 "status": status,
                 "stop_reason": stop_reason,
+                "shutdown_pose": shutdown_pose,
+                "shutdown_gripper_error": shutdown_gripper_error,
+                "action_smoothing": action_smoother.status(),
                 "chunks": chunks,
                 "actions_sent": actions_sent,
                 "time_ns": time.time_ns(),
@@ -143,13 +187,103 @@ def run_from_config(cfg: Any) -> int:
                 "robot_client": None if robot_client is None else robot_client.status(),
                 "scheduler": {
                     "dry_run": None if scheduler is None else scheduler.dry_run,
+                    "max_acceleration": (
+                        None if scheduler is None or scheduler.max_acceleration is None
+                        else [float(value) if np.isfinite(value) else None for value in scheduler.max_acceleration]
+                    ),
                     "history": 0 if scheduler is None else len(scheduler.history),
                     "filters": [] if scheduler is None else [item.name for item in scheduler.filters],
                 },
             },
         )
-        if return_code:
-            return return_code
+        if shutdown_pose.get("status") == "error":
+            raise RuntimeError("shutdown return failed: " + shutdown_pose["error"])
+        if shutdown_gripper_error:
+            raise RuntimeError("shutdown gripper opening failed: " + shutdown_gripper_error)
+
+
+def _prepare_policy_chunk(hardware, chunk):
+    if not hardware.robot.get("driver"):
+        return chunk
+    prepare = getattr(hardware.robot_driver, "prepare_policy_actions", None)
+    if not callable(prepare):
+        return chunk
+    return ActionChunk(
+        prepare(chunk.actions), action_space=chunk.action_space, hz=chunk.hz,
+        metadata=dict(chunk.metadata),
+    )
+
+
+def _open_grippers_before_policy(hardware, scheduler, workflow_cfg):
+    _open_grippers(hardware, scheduler, workflow_cfg.get("open_grippers_before_policy", {}), "before inference")
+
+
+def _open_grippers_after_policy(hardware, scheduler, workflow_cfg):
+    _open_grippers(hardware, scheduler, workflow_cfg.get("open_grippers_after_policy", {}), "after inference")
+
+
+def _open_grippers(hardware, scheduler, opening, phase):
+    if not opening.get("enabled", False):
+        return
+    if scheduler.dry_run:
+        print("[rollout_sync] dry_run: skipping physical gripper opening.", flush=True)
+        return
+    targets = np.asarray(opening["positions"], dtype=np.float32)
+    tolerance = float(opening.get("tolerance", 0.1))
+    timeout = float(opening.get("timeout_s", 5.0))
+    settle = float(opening.get("settle_s", 0.5))
+    if targets.shape != (2,) or not np.all(np.isfinite(targets)) or np.any(targets < -3.14) or np.any(targets > 0):
+        raise ValueError("A5 gripper opening requires two SDK positions in [-3.14, 0]")
+    if not all(np.isfinite(v) and v > 0 for v in (tolerance, timeout, settle)):
+        raise ValueError("gripper opening tolerance, timeout and settle must be finite and positive")
+    if scheduler.max_velocity is None:
+        raise ValueError("gripper opening requires velocity interpolation")
+    driver = hardware.robot_driver
+    current = np.asarray(driver.read_state().qpos, dtype=np.float32)
+    if current.shape != (14,) or not np.all(np.isfinite(current)):
+        raise ValueError("gripper opening requires finite 14-axis A5 feedback")
+    goal = current.copy()
+    goal[[6, 13]] = targets
+    scheduler.seed_current_action(current)
+    print(f"[rollout_sync] Opening grippers to {targets.tolist()} {phase}...", flush=True)
+    scheduler.execute(ActionChunk([goal], action_space="abs_qpos", hz=scheduler.interpolation_hz))
+    deadline = time.monotonic() + timeout
+    settled_since = None
+    while True:
+        actual = np.asarray(driver.read_state().qpos, dtype=np.float32)[[6, 13]]
+        now = time.monotonic()
+        if np.all(np.isfinite(actual)) and np.all(np.abs(actual - targets) <= tolerance):
+            if settled_since is None:
+                settled_since = now
+            if now - settled_since >= settle:
+                break
+        else:
+            settled_since = None
+        if now >= deadline:
+            raise TimeoutError(f"grippers did not reach open position: actual={actual.tolist()}, target={targets.tolist()}, tolerance={tolerance}")
+        scheduler._spin_sleep(min(0.02, deadline - now))
+    print(f"[rollout_sync] Grippers within opening tolerance ({phase}): actual={actual.tolist()}, target={targets.tolist()}, tolerance={tolerance}.", flush=True)
+
+
+def _return_to_shutdown_pose(hardware, workflow_cfg, scheduler, status):
+    if not workflow_cfg.get("return_to_shutdown_pose", False):
+        return {"status": "disabled"}
+    if scheduler is None or scheduler.dry_run or status not in {"completed", "interrupted"}:
+        return {"status": "skipped"}
+    try:
+        driver = hardware.robot_driver
+        if not driver.is_connected:
+            return {"status": "skipped", "reason": "driver disconnected"}
+        # Gripper opening has finished through ZMQ; now stop command processing
+        # before directly using the owned driver for the return motion.
+        hardware.robot_owner.stop()
+        print("[rollout_sync] Returning slowly to shutdown_safe_position...", flush=True)
+        driver.move_to_shutdown_safe_position()
+        print("[rollout_sync] Shutdown pose reached; closing hardware.", flush=True)
+        return {"status": "completed"}
+    except (Exception, KeyboardInterrupt) as exc:
+        print(f"[rollout_sync] Shutdown return failed: {exc!r}; closing hardware.", flush=True)
+        return {"status": "error", "error": repr(exc)}
 
 
 def main() -> None:
@@ -245,18 +379,6 @@ def _wait_policy_inputs_ready(data_session: Any, policy: Any, timeout_s: float) 
         f"numpy_counts={data_session.numpy_counts()} "
         f"last_error={last_error!r}{skew_hint}"
     )
-
-
-def _apply_ros_config(raw_cfg: Any) -> None:
-    if raw_cfg is None:
-        return
-    if not isinstance(raw_cfg, dict):
-        raise ValueError("ros must be a mapping")
-    if "localhost_only" in raw_cfg:
-        enabled = bool(raw_cfg["localhost_only"])
-        os.environ["ROS_LOCALHOST_ONLY"] = "1" if enabled else "0"
-        if enabled:
-            os.environ.setdefault("ROS_AUTOMATIC_DISCOVERY_RANGE", "LOCALHOST")
 
 
 def _validate_policy_window(policy: Any, frames: list[Any]) -> None:

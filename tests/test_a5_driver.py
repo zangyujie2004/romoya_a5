@@ -83,6 +83,23 @@ def _driver(monkeypatch, **kwargs) -> A5DragDriver:
     return driver
 
 
+def test_a5_policy_gripper_offset_clips_both_bounds_without_mutating_predictions(monkeypatch):
+    from prometheus.nodes.robots import a5
+
+    monkeypatch.setattr(a5, "GIPPER_OFFSET", 0.1)
+    driver = _driver(monkeypatch)
+    raw = np.tile(np.arange(14, dtype=np.float32), (3, 1))
+    raw[:, [6, 13]] = [[-1.0, -0.05], [-3.5, 0.2], [-3.14, -1.5]]
+    original = raw.copy()
+    actual = driver.prepare_policy_actions(raw)
+
+    np.testing.assert_allclose(actual[:, [6, 13]], [[-0.9, 0], [-3.14, 0], [-3.04, -1.4]], atol=1e-6)
+    joints = [i for i in range(14) if i not in (6, 13)]
+    np.testing.assert_array_equal(actual[:, joints], original[:, joints])
+    np.testing.assert_array_equal(raw, original)
+    assert not FakeSingleArm.instances
+
+
 def test_a5_drag_driver_reads_left_then_right(monkeypatch):
     driver = _driver(monkeypatch)
     driver.connect()

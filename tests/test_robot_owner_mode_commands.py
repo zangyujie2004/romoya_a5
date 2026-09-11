@@ -84,7 +84,7 @@ class _FakeNode:
             return self.result_pub
         return _CapturingPublisher()
 
-    def create_subscription(self, msg_type: object, topic: str, callback: object, qos: int) -> None:
+    def create_subscription(self, msg_type: object, topic: str, callback: object, qos: int, **kwargs) -> None:
         return None
 
     def create_timer(self, period: float, callback: object) -> None:
@@ -95,53 +95,6 @@ class _FakeNode:
 
     def destroy_node(self) -> None:
         return None
-
-
-@pytest.fixture(autouse=True)
-def _ros_stubs(monkeypatch):
-    fake_rclpy = ModuleType("rclpy")
-    fake_executors = ModuleType("rclpy.executors")
-    fake_node_mod = ModuleType("rclpy.node")
-    fake_sensor_msgs = ModuleType("sensor_msgs.msg")
-    fake_std_msgs = ModuleType("std_msgs.msg")
-
-    class SingleThreadedExecutor:
-        def __init__(self, context: object | None = None) -> None:
-            self.context = context
-
-        def add_node(self, node: object) -> None:
-            return None
-
-        def spin_once(self, timeout_sec: float = 0.0) -> None:
-            return None
-
-        def remove_node(self, node: object) -> None:
-            return None
-
-        def shutdown(self) -> None:
-            return None
-
-    class JointState:
-        pass
-
-    class String:
-        def __init__(self) -> None:
-            self.data = ""
-
-    fake_executors.SingleThreadedExecutor = SingleThreadedExecutor
-    fake_node_mod.Node = _FakeNode
-    fake_sensor_msgs.JointState = JointState
-    fake_std_msgs.String = String
-    fake_rclpy.Context = lambda: SimpleNamespace(ok=lambda: True)
-    fake_rclpy.init = lambda **kwargs: None
-    fake_rclpy.ok = lambda: True
-    fake_rclpy.shutdown = lambda **kwargs: None
-
-    monkeypatch.setitem(sys.modules, "rclpy", fake_rclpy)
-    monkeypatch.setitem(sys.modules, "rclpy.executors", fake_executors)
-    monkeypatch.setitem(sys.modules, "rclpy.node", fake_node_mod)
-    monkeypatch.setitem(sys.modules, "sensor_msgs.msg", fake_sensor_msgs)
-    monkeypatch.setitem(sys.modules, "std_msgs.msg", fake_std_msgs)
 
 
 def test_owner_set_teach_mode_invokes_driver():

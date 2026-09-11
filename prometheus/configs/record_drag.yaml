@@ -22,7 +22,7 @@ data:
   history: 32
   bridge:
     enabled: true
-    name: ros_data
+    name: zmq_data
     wait_all_streams: true
     qos_depth: 10
     stamp_source: header
@@ -38,8 +38,9 @@ data:
     default_event_value: null
     enable_plots: true
 
-ros:
-  localhost_only: true
+transport:
+  backend: zmq
+  namespace: ${oc.env:PROMETHEUS_ZMQ_NAMESPACE,prometheus-v3}
 
 workflow:
   data_cpu_affinity: [8, 9, 10, 11, 12, 13, 14, 15]

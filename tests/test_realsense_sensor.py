@@ -37,7 +37,7 @@ def test_camera_stream_names_follow_official_wrapper_streams():
 def test_camera_map_validation_is_strict():
     assert parse_camera_map('{"d405":"260422273830"}') == {"d405": "260422273830"}
 
-    with pytest.raises(ValueError, match="ROS-safe"):
+    with pytest.raises(ValueError, match="alphanumeric/underscore"):
         normalize_camera_map({"d405-rgb": "260422273830"})
 
     with pytest.raises(ValueError, match="is used by"):
@@ -78,7 +78,7 @@ def test_camera_streams_match_official_wrapper_topics():
 
     assert topics["d405_color"] == {
         "topic": "/prometheus/sensors/cameras/d405/color/image_raw",
-        "msg_type": "sensor_msgs.msg.Image",
+        "msg_type": "prometheus.transport.messages.Image",
         "domain": "sensor",
         "ros_domain_id": 22,
     }

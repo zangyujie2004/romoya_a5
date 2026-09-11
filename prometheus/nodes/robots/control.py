@@ -79,7 +79,7 @@ def validate_control_payload(payload: Any) -> dict[str, Any]:
     required = CONTROL_FIELDS[command]
     keys = set(payload)
     missing = required.difference(keys)
-    unknown = keys.difference(required)
+    unknown = keys.difference(required | {"expires_ns"})
     if missing:
         raise ValueError(f"{command} missing fields: {', '.join(sorted(missing))}")
     if unknown:
@@ -90,6 +90,8 @@ def validate_control_payload(payload: Any) -> dict[str, Any]:
         raise ValueError("client_stamp_ns must be an integer")
     if not isinstance(payload["command_source"], str) or not payload["command_source"]:
         raise ValueError("command_source must be a non-empty string")
+    if "expires_ns" in payload and (type(payload["expires_ns"]) is not int or payload["expires_ns"] <= 0):
+        raise ValueError("expires_ns must be a positive integer")
     if command == "send_action" and not isinstance(payload["action_space"], str):
         raise ValueError("action_space must be a string")
     return payload

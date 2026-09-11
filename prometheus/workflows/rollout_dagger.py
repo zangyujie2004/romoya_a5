@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from prometheus.transport.local import configure as configure_transport
+
 import os
 import time
 from dataclasses import dataclass, field
@@ -102,7 +104,7 @@ class ScriptedEventSchedule:
 def run_from_config(cfg: Any) -> int:
     # step1: hydra config
     data = config_dict(cfg, "rollout_dagger")
-    _apply_ros_config(data.get("ros", {}))
+    configure_transport(data.get("transport"))
     run_cfg = section(data, "run")
     robot_cfg = section(data, "robot")
     task_cfg = section(data, "task")
@@ -344,18 +346,6 @@ def _latest_robot_stamp_ns(data_session: Any) -> int | None:
         return None
     stamp_ns = getattr(sample, "stamp_ns", None)
     return None if stamp_ns is None else int(stamp_ns)
-
-
-def _apply_ros_config(raw_cfg: Any) -> None:
-    if raw_cfg is None:
-        return
-    if not isinstance(raw_cfg, dict):
-        raise ValueError("ros must be a mapping")
-    if "localhost_only" in raw_cfg:
-        enabled = bool(raw_cfg["localhost_only"])
-        os.environ["ROS_LOCALHOST_ONLY"] = "1" if enabled else "0"
-        if enabled:
-            os.environ.setdefault("ROS_AUTOMATIC_DISCOVERY_RANGE", "LOCALHOST")
 
 
 if __name__ == "__main__":

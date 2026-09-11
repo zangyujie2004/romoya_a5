@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from prometheus.transport.local import configure as configure_transport
+
 import os
 from pathlib import Path
 import time
@@ -26,7 +28,7 @@ from prometheus.visualization.preview import (
 
 def run_from_config(cfg: Any) -> int:
     data = config_dict(cfg, "record_drag")
-    _apply_ros_config(data.get("ros", {}))
+    configure_transport(data.get("transport"))
     run_cfg = section(data, "run")
     robot_cfg = section(data, "robot")
     task_cfg = section(data, "task")
@@ -318,21 +320,9 @@ def _print_ready_message(run: Any, task_cfg: dict[str, Any], workflow_cfg: dict[
     print(f"[ready] task={task_cfg.get('id')} run_id={run.run_id}", flush=True)
     print(f"[ready] recording_root={data_session.recorder.config.get('output_dir', '')}", flush=True)
     print(f"[ready] preview={preview_mode}", flush=True)
-    print(f"[ready] ROS_LOCALHOST_ONLY={os.environ.get('ROS_LOCALHOST_ONLY', '')}", flush=True)
+    print(f"[ready] transport=zmq namespace={os.environ.get('PROMETHEUS_ZMQ_NAMESPACE', 'prometheus-v3')}", flush=True)
     print("[ready] controls: aa=start recording, bb=stop/save, cc=event mark, Ctrl-C=save active episode and exit", flush=True)
     print("", flush=True)
-
-
-def _apply_ros_config(raw_cfg: Any) -> None:
-    if raw_cfg is None:
-        return
-    if not isinstance(raw_cfg, dict):
-        raise ValueError("ros must be a mapping")
-    if "localhost_only" in raw_cfg:
-        enabled = bool(raw_cfg["localhost_only"])
-        os.environ["ROS_LOCALHOST_ONLY"] = "1" if enabled else "0"
-        if enabled:
-            os.environ.setdefault("ROS_AUTOMATIC_DISCOVERY_RANGE", "LOCALHOST")
 
 
 def main() -> None:

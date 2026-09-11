@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from prometheus.transport.local import configure as configure_transport
+
 import pickle
 import time
 from pathlib import Path
@@ -150,6 +152,7 @@ def load_replay_chunk(
 
 def run_from_config(cfg: Any) -> int:
     data = config_dict(cfg, "replay")
+    configure_transport(data.get("transport"))
     run_cfg = section(data, "run")
     robot_cfg = section(data, "robot")
     task_cfg = section(data, "task")

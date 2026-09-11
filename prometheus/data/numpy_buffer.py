@@ -348,7 +348,7 @@ def pointcloud2_to_numpy(msg: Any) -> np.ndarray:
     selected = tuple(name for name in ("x", "y", "z", "dx", "dy", "dz") if name in field_names)
     if not selected:
         raise ValueError("PointCloud2 has no supported fields")
-    import sensor_msgs_py.point_cloud2 as pc2
+    from prometheus.transport import messages as pc2
 
     points = pc2.read_points(msg, field_names=selected, skip_nans=False)
     if isinstance(points, np.ndarray) and points.dtype.fields:

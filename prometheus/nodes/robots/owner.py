@@ -22,7 +22,7 @@ from prometheus.nodes.robots.robot_node import RobotDriver
 
 
 class RobotOwnerNode:
-    """ROS owner runtime that wraps a small RobotDriver."""
+    """ZMQ owner runtime that wraps a small RobotDriver."""
 
     def __init__(
         self,
@@ -39,11 +39,9 @@ class RobotOwnerNode:
         status_qos_depth: int = 10,
         command_source_timeout_s: float = 1.0,
     ):
-        import rclpy
-        from rclpy.executors import SingleThreadedExecutor
-        from rclpy.node import Node
-        from sensor_msgs.msg import JointState
-        from std_msgs.msg import String
+        from prometheus.transport.local import Context, SingleThreadedExecutor, Node
+        from prometheus.transport.messages import JointState
+        from prometheus.transport.messages import String
 
         class _Node(Node):
             pass
@@ -53,7 +51,6 @@ class RobotOwnerNode:
         if float(hz) <= 0:
             raise ValueError("hz must be positive")
 
-        self.rclpy = rclpy
         self.JointState = JointState
         self.String = String
         self.driver = driver
@@ -80,8 +77,7 @@ class RobotOwnerNode:
         self._error = ""
 
         if node is None:
-            self._context = rclpy.Context()
-            rclpy.init(args=None, context=self._context, domain_id=self.ros_domain_id)
+            self._context = Context(domain_id=self.ros_domain_id)
             self.node = _Node(node_name or f"{self.robot_id}_robot_owner", context=self._context)
         else:
             self.node = node
@@ -89,15 +85,20 @@ class RobotOwnerNode:
         self.executor = SingleThreadedExecutor(context=self._context)
         self.executor.add_node(self.node)
 
-        self.state_pub = self.node.create_publisher(self.JointState, self.topics.state, self.qos_depth)
-        self.status_pub = self.node.create_publisher(self.String, self.topics.status, self.status_qos_depth)
-        self.result_pub = self.node.create_publisher(self.String, self.topics.result, self.status_qos_depth)
-        setup_ros = getattr(self.driver, "setup_ros", None)
-        if callable(setup_ros):
-            setup_ros(node=self.node, qos_depth=self.qos_depth)
-        self.node.create_subscription(self.String, self.topics.control, self._control_cb, self.status_qos_depth)
-        self.timer = self.node.create_timer(1.0 / self.hz, self._publish_state)
-        self.status_timer = self.node.create_timer(1.0, self._publish_status_timer)
+        try:
+            self.state_pub = self.node.create_publisher(self.JointState, self.topics.state, self.qos_depth)
+            self.status_pub = self.node.create_publisher(self.String, self.topics.status, self.status_qos_depth)
+            self.result_pub = self.node.create_publisher(self.String, self.topics.result, self.status_qos_depth)
+            setup_transport = getattr(self.driver, "setup_transport", None)
+            if callable(setup_transport):
+                setup_transport(node=self.node, qos_depth=self.qos_depth)
+            self.node.create_subscription(self.String, self.topics.control, self._control_cb, self.status_qos_depth, command=True)
+            self.timer = self.node.create_timer(1.0 / self.hz, self._publish_state)
+            self.status_timer = self.node.create_timer(1.0, self._publish_status_timer)
+        except BaseException:
+            if self._owns_node:
+                self.node.destroy_node()
+            raise
 
     def start(self) -> None:
         if self._started:
@@ -106,10 +107,10 @@ class RobotOwnerNode:
         self._stop.clear()
         self._error = ""
         self._thread = threading.Thread(target=self._spin, name=f"{self.robot_id}_owner", daemon=True)
-        self._thread.start()
         self._started = True
         self._closed = False
         self._publish_status_safely("running")
+        self._thread.start()
 
     def wait_ready(self, timeout_s: float) -> None:
         if not self._started:
@@ -126,13 +127,15 @@ class RobotOwnerNode:
     def stop(self) -> None:
         if not self._started:
             return
-        self._publish_status_safely("stopping")
-        self.active_command_source = None
-        self.active_command_source_stamp_ns = 0
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=2.0)
+            if self._thread.is_alive():
+                raise TimeoutError("robot command thread is still executing; cannot close driver concurrently")
             self._thread = None
+        self.active_command_source = None
+        self.active_command_source_stamp_ns = 0
+        self._publish_status_safely("stopping")
         self._started = False
 
     def spin_once(self, timeout_s: float = 0.0) -> None:
@@ -141,6 +144,7 @@ class RobotOwnerNode:
     def status(self) -> dict[str, Any]:
         return {
             "type": type(self).__name__,
+            "transport": "zmq",
             "robot_id": self.robot_id,
             "ros_domain_id": self.ros_domain_id,
             "started": self._started,
@@ -172,7 +176,7 @@ class RobotOwnerNode:
             if self._owns_node:
                 self.node.destroy_node()
             if self._owns_node and self._context is not None and self._context.ok():
-                self.rclpy.shutdown(context=self._context)
+                self._context.shutdown()
             self._closed = True
 
     def _spin(self) -> None:
@@ -185,15 +189,15 @@ class RobotOwnerNode:
     def _context_ok(self) -> bool:
         if self._context is not None:
             return bool(self._context.ok())
-        return bool(self.rclpy.ok())
+        return not self._closed
 
     def _publish_state(self) -> None:
         state = self.driver.read_state()
         stamp = self.node.get_clock().now().to_msg()
         self.state_pub.publish(self._state_msg(stamp, state))
-        publish_ros_state = getattr(self.driver, "publish_ros_state", None)
-        if callable(publish_ros_state):
-            publish_ros_state(node=self.node, stamp=stamp, state=state)
+        publish_transport_state = getattr(self.driver, "publish_transport_state", None)
+        if callable(publish_transport_state):
+            publish_transport_state(node=self.node, stamp=stamp, state=state)
         self.state_count += 1
 
     def _publish_status_timer(self) -> None:
@@ -226,6 +230,8 @@ class RobotOwnerNode:
             return
 
         try:
+            if time.time_ns() >= payload.get("expires_ns", 2**63 - 1):
+                raise TimeoutError("control request expired before execution")
             self._handle_payload(payload, request_stamp_ns, request_signature)
         except Exception as exc:
             self._publish_result(

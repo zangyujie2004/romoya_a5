@@ -1,1 +1,1 @@
-"""ROS-facing runtime nodes."""
+"""ZMQ-facing runtime nodes."""

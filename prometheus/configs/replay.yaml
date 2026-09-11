@@ -39,6 +39,10 @@ workflow:
   action_hz: ${user.action_hz}
   reset_home_timeout_s: 30.0
 
+transport:
+  backend: zmq
+  namespace: ${oc.env:PROMETHEUS_ZMQ_NAMESPACE,prometheus-v3}
+
 hydra:
   job:
     chdir: false

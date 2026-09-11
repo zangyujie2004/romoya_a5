@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Diagnose ROS stream rate and timestamp alignment for FM rollout.
+"""Diagnose ZMQ stream rate and timestamp alignment for FM rollout.
 
 Simulates DataSession window alignment:
   - stamp_source=header: match on message header.stamp
@@ -97,11 +97,8 @@ def main() -> int:
     parser.add_argument("--expected-hz", type=float, default=30.0)
     args = parser.parse_args()
 
-    import rclpy
-    from geometry_msgs.msg import PoseStamped
-    from rclpy.executors import SingleThreadedExecutor
-    from rclpy.node import Node
-    from sensor_msgs.msg import Image, JointState
+    from prometheus.transport.local import Context, SingleThreadedExecutor, Node
+    from prometheus.transport.messages import Image, JointState, PoseStamped
 
     camera_names = ("base_0", "left_wrist_0", "right_wrist_0")
     stream_topics = {
@@ -117,10 +114,8 @@ def main() -> int:
     robot_streams = {"robot_state", "left_eef", "right_eef"}
     sensor_streams = set(stream_topics) - robot_streams
 
-    ctx_robot = rclpy.Context()
-    ctx_sensor = rclpy.Context()
-    rclpy.init(context=ctx_robot, domain_id=args.control_domain)
-    rclpy.init(context=ctx_sensor, domain_id=args.sensor_domain)
+    ctx_robot = Context(args.control_domain)
+    ctx_sensor = Context(args.sensor_domain)
 
     node_robot = Node("sync_check_robot", context=ctx_robot)
     node_sensor = Node("sync_check_sensor", context=ctx_sensor)
@@ -140,12 +135,8 @@ def main() -> int:
     node_robot.create_subscription(
         JointState, stream_topics["robot_state"], make_cb("robot_state"), 10
     )
-    node_robot.create_subscription(
-        PoseStamped, stream_topics["left_eef"], make_cb("left_eef"), 10
-    )
-    node_robot.create_subscription(
-        PoseStamped, stream_topics["right_eef"], make_cb("right_eef"), 10
-    )
+    for name in ("left_eef", "right_eef"):
+        node_robot.create_subscription(PoseStamped, stream_topics[name], make_cb(name), 10)
     for name in sensor_streams:
         node_sensor.create_subscription(Image, stream_topics[name], make_cb(name), 10)
 
@@ -159,6 +150,8 @@ def main() -> int:
         exec_robot.spin_once(timeout_sec=0.01)
         exec_sensor.spin_once(timeout_sec=0.01)
 
+    node_robot.destroy_node()
+    node_sensor.destroy_node()
     print("\n=== effective rate (recv inter-arrival) ===")
     hz_low = []
     for name, item in stats.items():
@@ -241,7 +234,7 @@ def main() -> int:
         )
     if recv_fail:
         print("- run this script while infer_fm is NOT loading the model, then again during infer")
-        print("  if skew jumps only during infer -> GPU/CPU starvation on ROS spin threads")
+        print("  if skew jumps only during infer -> GPU/CPU starvation on ZMQ spin threads")
 
     return 0 if recv_fail == 0 else 1
 

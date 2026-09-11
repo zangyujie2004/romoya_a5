@@ -21,7 +21,7 @@ data:
   history: 32
   bridge:
     enabled: true
-    name: ros_data
+    name: zmq_data
     wait_all_streams: true
     qos_depth: 10
   recording:
@@ -37,14 +37,19 @@ policy_session:
 
 scheduler:
   _target_: prometheus.policy.scheduler.ActionScheduler
-  dry_run: false
+  dry_run: true
   wait: true
   timeout_s: 3.0
   history: 1024
   filters: []
 
 workflow:
+  data_cpu_affinity: null  # Optional CPU set for data / inference, applied before model loading.
   stop_on_done: true
+
+transport:
+  backend: zmq
+  namespace: ${oc.env:PROMETHEUS_ZMQ_NAMESPACE,prometheus-v3}
 
 hydra:
   job:

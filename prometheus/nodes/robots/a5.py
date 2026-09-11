@@ -30,7 +30,9 @@ ROBOT_TOPIC_SUFFIXES = {
 SIDE_VECTOR_START = {"left": 0, "right": 7}
 MAX_ABS_TEACH_GRIPPER_TORQUE = 0.1
 A5_SAFE_JOINT_POSITION_LIMIT = math.pi
-
+# Positive offsets close the grippers slightly in native SDK position units.
+# Applied to policy targets before interpolation, not feedback or lifecycle moves.
+GIPPER_OFFSET = 0.1
 
 @dataclass(frozen=True, kw_only=True)
 class A5RobotState(RobotState):
@@ -219,6 +221,16 @@ class A5DragDriver:
             raise ValueError(f"A5 action_space must be one of {A5_ACTION_SPACES}, got {action_space!r}")
         self.send_joint_positions(action)
 
+    def prepare_policy_actions(self, actions: np.ndarray) -> np.ndarray:
+        """Offset only policy gripper targets; preserve raw predictions and joints."""
+        command = np.array(actions, dtype=np.float32, copy=True)
+        if command.ndim != 2 or command.shape[1] != 14 or not np.all(np.isfinite(command)):
+            raise ValueError("A5 policy actions must have finite shape (T, 14)")
+        if not np.isfinite(GIPPER_OFFSET):
+            raise ValueError("GIPPER_OFFSET must be finite")
+        command[:, [6, 13]] = np.clip(command[:, [6, 13]] + GIPPER_OFFSET, -3.14, 0.0)
+        return command
+
     def send_joint_positions(self, qpos: np.ndarray) -> np.ndarray:
         self._require_motion_available()
         command = _joint_command(qpos)
@@ -393,10 +405,10 @@ class A5DragDriver:
             "reset_home_enabled": True,
         }
 
-    def setup_ros(self, *, node: Any, qos_depth: int) -> None:
+    def setup_transport(self, *, node: Any, qos_depth: int) -> None:
         if not self.eef_topics:
             return
-        from geometry_msgs.msg import PoseStamped
+        from prometheus.transport.messages import PoseStamped
 
         missing = set(self.sides).difference(self.eef_topics)
         if missing:
@@ -407,7 +419,7 @@ class A5DragDriver:
             for side in self.sides
         }
 
-    def publish_ros_state(self, *, node: Any, stamp: Any, state: RobotState) -> None:
+    def publish_transport_state(self, *, node: Any, stamp: Any, state: RobotState) -> None:
         del node
         if not self.eef_pubs:
             return
@@ -777,19 +789,19 @@ def robot_streams(robot: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
     return {
         "robot_state": {
             "topic": topics["state"],
-            "msg_type": "sensor_msgs.msg.JointState",
+            "msg_type": "prometheus.transport.messages.JointState",
             "domain": "robot",
             "ros_domain_id": control_domain_id,
         },
         "left_eef": {
             "topic": topics["left_eef"],
-            "msg_type": "geometry_msgs.msg.PoseStamped",
+            "msg_type": "prometheus.transport.messages.PoseStamped",
             "domain": "robot",
             "ros_domain_id": control_domain_id,
         },
         "right_eef": {
             "topic": topics["right_eef"],
-            "msg_type": "geometry_msgs.msg.PoseStamped",
+            "msg_type": "prometheus.transport.messages.PoseStamped",
             "domain": "robot",
             "ros_domain_id": control_domain_id,
         },

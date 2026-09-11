@@ -10,7 +10,7 @@ export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
 # dry_run only skips trajectory commands: hardware startup and reset_home still run.
 exec "${PYTHON_BIN:-python}" -m prometheus.workflows.replay \
   robot=a5_drag \
-  user.input=/home/romoya-3/workspace/raw_data/egg_0908_100/0000 \
+  user.input=/home/romoya-3/workspace/raw_data/egg_0908_100/0010 \
   user.control_mode=joint \
   user.dry_run=false \
   "$@"

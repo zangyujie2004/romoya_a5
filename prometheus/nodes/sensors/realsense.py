@@ -30,7 +30,7 @@ class RealsenseSensorNode:
     """HardwareSession-owned pyrealsense2 camera publisher.
 
     Each physical camera runs in its own process with its own pyrealsense2
-    pipeline and ROS node. The process publishes the same topic contract that
+    pipeline and ZMQ publisher. The process publishes the same topic contract that
     the RealSense ROS wrapper used to expose.
     """
 
@@ -225,11 +225,9 @@ def _camera_worker(
 ) -> None:
     import numpy as np
     import pyrealsense2 as rs
-    import rclpy
-    from cv_bridge import CvBridge
-    from rclpy.qos import qos_profile_sensor_data
-    from rclpy.signals import SignalHandlerOptions
-    from sensor_msgs.msg import CameraInfo, Image
+    from prometheus.transport.local import Node
+    from prometheus.transport.messages import ImageBridge, CameraInfo, Image
+    qos_profile_sensor_data = 5
 
     shutdown_requested = False
 
@@ -248,9 +246,8 @@ def _camera_worker(
         cfg.enable_stream(rs.stream.infrared, 1, int(width), int(height), rs.format.y8, int(fps))
         cfg.enable_stream(rs.stream.infrared, 2, int(width), int(height), rs.format.y8, int(fps))
 
-    rclpy.init(args=None, domain_id=ros_domain_id, signal_handler_options=SignalHandlerOptions.NO)
-    node = rclpy.create_node(f"prometheus_realsense_{safe_node_name(camera_name)}")
-    bridge = CvBridge()
+    node = Node(f"prometheus_realsense_{safe_node_name(camera_name)}", domain_id=ros_domain_id)
+    bridge = ImageBridge()
     timing_trace = _PublishTimingTrace(os.environ.get("PROMETHEUS_CAMERA_TIMING_TRACE", ""), camera_name)
     image_qos = qos_profile_sensor_data if qos == "sensor" else 10
     publishers = {
@@ -276,7 +273,7 @@ def _camera_worker(
         next_time = time.monotonic()
         ready_reported = False
 
-        while rclpy.ok() and not shutdown_requested:
+        while not shutdown_requested:
             frames = pipeline.wait_for_frames()
             stamp = node.get_clock().now().to_msg()
             published_streams: set[str] = set()
@@ -337,7 +334,6 @@ def _camera_worker(
                 ready_queue.put(camera_name)
                 ready_reported = True
 
-            rclpy.spin_once(node, timeout_sec=0.0)
             next_time += period
             time.sleep(max(0.0, next_time - time.monotonic()))
     except Exception as exc:
@@ -353,8 +349,6 @@ def _camera_worker(
             node.destroy_node()
         except Exception:
             pass
-        if rclpy.ok():
-            rclpy.shutdown()
 
 
 def _publish_image(
@@ -378,7 +372,7 @@ def _publish_image(
     if timing_trace is not None:
         timing_trace.record(
             stream_name,
-            publish_ros_ns=_stamp_msg_to_ns(stamp),
+            publish_stamp_ns=_stamp_msg_to_ns(stamp),
             publish_start_ns=publish_start_ns,
             publish_done_ns=publish_done_ns,
             encoding=encoding,
@@ -438,7 +432,7 @@ def _camera_info_templates(
 
 
 def _camera_info_from_profile(video_profile: Any, frame_id: str, resize: CameraResize) -> Any:
-    from sensor_msgs.msg import CameraInfo
+    from prometheus.transport.messages import CameraInfo
 
     intr = video_profile.get_intrinsics()
     width, height = _target_size(int(intr.width), int(intr.height), resize)
@@ -506,7 +500,7 @@ def normalize_camera_map(value: Mapping[str, Any]) -> dict[str, str]:
         if not name:
             raise ValueError("RealSense camera name must be non-empty")
         if name != safe_node_name(name):
-            raise ValueError(f"RealSense camera name {name!r} must be a ROS-safe name")
+            raise ValueError(f"RealSense camera name {name!r} must be an alphanumeric/underscore name")
         if isinstance(serial, Mapping):
             serial = serial.get("serial_no", "")
         serial = str(serial).strip()
@@ -639,8 +633,8 @@ def camera_serials(camera_config: Mapping[str, Any]) -> dict[str, str]:
 
 def _msg_type_for_stream(key: str) -> str:
     if key.endswith("_info") or key in {"color_info", "infra1_info", "infra2_info"}:
-        return "sensor_msgs.msg.CameraInfo"
-    return "sensor_msgs.msg.Image"
+        return "prometheus.transport.messages.CameraInfo"
+    return "prometheus.transport.messages.Image"
 
 
 def _topic(topic: str, msg_type: str, ros_domain_id: int) -> dict[str, Any]:
@@ -682,7 +676,7 @@ class _PublishTimingTrace:
         self,
         stream_name: str,
         *,
-        publish_ros_ns: int,
+        publish_stamp_ns: int,
         publish_start_ns: int,
         publish_done_ns: int,
         encoding: str,
@@ -693,11 +687,11 @@ class _PublishTimingTrace:
         if self._file is None:
             return
         payload = {
-            "event": "ros_publish",
+            "event": "zmq_publish",
             "camera": self.camera_name,
             "stream": str(stream_name),
             "name": f"{self.camera_name}_{stream_name}",
-            "publish_ros_ns": int(publish_ros_ns),
+            "publish_stamp_ns": int(publish_stamp_ns),
             "publish_start_ns": int(publish_start_ns),
             "publish_done_ns": int(publish_done_ns),
             "publish_call_ms": (int(publish_done_ns) - int(publish_start_ns)) / 1_000_000.0,

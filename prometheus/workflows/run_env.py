@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from prometheus.transport.local import configure as configure_transport
+
 import os
 import time
 from collections.abc import Callable, Sequence
@@ -377,6 +379,7 @@ def serve_forever(server: ZmqEnvServer, session_factory: Callable[[], RunEnvSess
 
 def run_from_config(cfg: Any) -> int:
     data = config_dict(cfg, "run_env")
+    configure_transport(data.get("transport"))
     run_cfg = section(data, "run")
     robot_cfg = section(data, "robot")
     hardware_cfg = section(data, "hardware")

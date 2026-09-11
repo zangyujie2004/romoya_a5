@@ -30,6 +30,20 @@ def test_default_action_process_for_joint():
     assert deploy.action_process == "abs_qpos"
 
 
+@pytest.mark.parametrize("numpy_sample", [False, True])
+def test_joint_preprocess_preserves_native_a5_grippers(numpy_sample):
+    from infer.preprocess import build_state_frame
+
+    positions = np.zeros(14, dtype=np.float32)
+    positions[[6, 13]] = [-3.14, -1.25]
+    if numpy_sample:
+        sample = SimpleNamespace(data={"name": np.array(DEFAULT_JOINT_NAMES), "position": positions})
+    else:
+        sample = SimpleNamespace(msg=SimpleNamespace(name=list(DEFAULT_JOINT_NAMES), position=positions.tolist()))
+    actual = build_state_frame({"robot_state": sample}, PreprocessConfig(action_type="joint"))
+    np.testing.assert_array_equal(actual, positions)
+
+
 def test_build_obs_from_frames_joint_state_shape():
     cfg = PreprocessConfig(action_type="joint")
     frames = [_joint_frame(idx) for idx in range(8)]

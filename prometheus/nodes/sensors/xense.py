@@ -275,12 +275,9 @@ def _tactile_worker(
     preload_xense_gpu_libraries(required=require_gpu)
 
     import numpy as np
-    import rclpy
-    import sensor_msgs_py.point_cloud2 as pc2
-    from cv_bridge import CvBridge
-    from rclpy.signals import SignalHandlerOptions
-    from sensor_msgs.msg import Image, PointCloud2, PointField
-    from std_msgs.msg import Header
+    from prometheus.transport.local import Node
+    from prometheus.transport import messages as pc2
+    from prometheus.transport.messages import ImageBridge, Image, PointCloud2, PointField, Header
     from xensesdk import Sensor
 
     shutdown_requested = False
@@ -300,9 +297,8 @@ def _tactile_worker(
             release()
         raise RuntimeError(f"Xense {sensor_name} serial={serial} fell back to CPU while require_gpu=true")
 
-    rclpy.init(args=None, domain_id=ros_domain_id, signal_handler_options=SignalHandlerOptions.NO)
-    node = rclpy.create_node(f"prometheus_xense_{safe_node_name(sensor_name)}")
-    bridge = CvBridge()
+    node = Node(f"prometheus_xense_{safe_node_name(sensor_name)}", domain_id=ros_domain_id)
+    bridge = ImageBridge()
     topics = tactile_topics(
         sensor_name,
         topic_prefix=topic_prefix,
@@ -327,7 +323,7 @@ def _tactile_worker(
     next_time = time.monotonic()
     ready_reported = False
     try:
-        while rclpy.ok() and not shutdown_requested:
+        while not shutdown_requested:
             outputs = read_xense_frame(sensor, Sensor.OutputType)
             stamp = node.get_clock().now().to_msg()
             header = Header()
@@ -375,7 +371,6 @@ def _tactile_worker(
                 ready_queue.put(sensor_name)
                 ready_reported = True
 
-            rclpy.spin_once(node, timeout_sec=0.0)
             next_time += period
             time.sleep(max(0.0, next_time - time.monotonic()))
     except Exception as exc:
@@ -392,8 +387,6 @@ def _tactile_worker(
             node.destroy_node()
         except Exception:
             pass
-        if rclpy.ok():
-            rclpy.shutdown()
 
 
 def preload_xense_gpu_libraries(*, library_dir: str | Path | None = None, required: bool) -> tuple[str, ...]:
@@ -517,21 +510,21 @@ def streams(robot: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
         if "flow" in topics:
             items[f"{sensor_name}_tactile_flow"] = {
                 "topic": topics["flow"],
-                "msg_type": "sensor_msgs.msg.PointCloud2",
+                "msg_type": "prometheus.transport.messages.PointCloud2",
                 "domain": "sensor",
                 "ros_domain_id": sensor_domain_id,
             }
         if "difference" in topics:
             items[f"{sensor_name}_tactile_difference"] = {
                 "topic": topics["difference"],
-                "msg_type": "sensor_msgs.msg.Image",
+                "msg_type": "prometheus.transport.messages.Image",
                 "domain": "sensor",
                 "ros_domain_id": sensor_domain_id,
             }
         if "raw" in topics:
             items[f"{sensor_name}_tactile_raw"] = {
                 "topic": topics["raw"],
-                "msg_type": "sensor_msgs.msg.Image",
+                "msg_type": "prometheus.transport.messages.Image",
                 "domain": "sensor",
                 "ros_domain_id": sensor_domain_id,
             }
@@ -570,7 +563,7 @@ def normalize_tactile_map(value: Mapping[str, Any]) -> dict[str, str]:
         if not name:
             raise ValueError("Xense tactile sensor name must be non-empty")
         if name != safe_node_name(name):
-            raise ValueError(f"Xense tactile sensor name {name!r} must be a ROS-safe name")
+            raise ValueError(f"Xense tactile sensor name {name!r} must be an alphanumeric/underscore name")
         if isinstance(serial, Mapping):
             serial = serial.get("serial_no", "")
         serial = str(serial).strip()
