@@ -1,0 +1,164 @@
+defaults:
+  - robot: a5_drag
+  - task: default
+  - policy: pi05_ExpertConcat
+  - _self_
+
+user:
+  # Operators should normally only edit this block.
+  task_id: egg
+  inference_root: ${oc.env:HOME}/workspace/raw_data/prometheus_inference
+  steps: 40  # policy chunks per run; one chunk = n_action_steps actions at action_hz
+  dry_run: true  # true: full data -> policy -> scheduler loop without moving the robot
+  policy_server: ws://127.0.0.1:8000  # expert_concat/scripts/pi05_ExpertConcat_serve_policy.py
+  prompt: null  # null: the training prompt stored on the server
+  smooth_action: true
+  smooth_action_alpha: 0.6  # Previous-target weight: higher = smoother, more lag; 0 = no smoothing.
+  smooth_action_gripper: false  # Smooth arm joints only by default.
+  data_cpu_affinity: [8, 9, 10, 11, 12, 13, 14, 15]  # sensors / inference client; A5 SDK uses robot.control_cpu_affinity (0-3)
+  open_grippers_before_policy: true
+  open_grippers_after_policy: true
+  gripper_open_positions: [-3.14, -3.14]  # left/right, native A5 SDK units
+  exit_gripper_open_tolerance: 0.2  # SDK position units; exit-only acceptance tolerance
+  joint_max_velocity: 10.0  # rad/s, target interpolation
+  joint_max_acceleration: 300.0  # rad/s^2, arm target trajectory only; null disables.
+  gripper_max_velocity: 15.0  # SDK position units/s
+  interpolation_hz: 30
+  return_to_shutdown_pose: true
+  shutdown_safe_max_velocity: 1.0  # rad/s, exit return only
+  action_space: abs_qpos
+  action_hz: 30.0  # dataset fps of the checkpoint (checked on connect)
+  n_action_steps: 50  # actions executed per chunk, at most the checkpoint action_horizon (50)
+
+task:
+  id: ${user.task_id}
+
+run:
+  id: ${now:%Y%m%d_%H%M%S_%f}
+  output_dir: ${user.inference_root}/${task.id}/${run.id}
+  runtime_dir: ${run.output_dir}/runtime
+  wait_ready_timeout_s: 15.0
+  steps: ${user.steps}
+
+robot:
+  robot:
+    action_space: ${user.action_space}
+    shutdown_safe_max_velocity: ${user.shutdown_safe_max_velocity}
+
+policy:
+  action_hz: ${user.action_hz}
+  action_space: ${user.action_space}
+  n_action_steps: ${user.n_action_steps}
+  prompt: ${user.prompt}
+  remote:
+    server: ${user.policy_server}
+
+hardware:
+  name: hardware
+  mode: owned
+  sensors: auto
+  streams: auto
+
+data:
+  name: data
+  mode: owned
+  history: 64
+  bridge:
+    enabled: true
+    name: zmq_data
+    wait_all_streams: true
+    qos_depth: 10
+    stamp_source: header
+    print_camera_timestamps: false
+    print_camera_rates: false
+    camera_rate_report_s: 2.0
+  numpy:
+    enabled: true
+    history: 64
+    recording:
+      enabled: false
+  timing:
+    enabled: true
+    path: ${run.runtime_dir}/data_timing.jsonl
+  recording:
+    enabled: true
+    output_dir: ${run.output_dir}/data
+    episode_id: "0000"
+    queue_size: 4096
+    fps: 30.0
+    default_event_value: 0
+    enable_plots: true
+
+policy_session:
+  name: policy
+  mode: owned
+
+scheduler:
+  _target_: prometheus.policy.scheduler.ActionScheduler
+  dry_run: ${user.dry_run}
+  max_velocity:
+    - ${user.joint_max_velocity}
+    - ${user.joint_max_velocity}
+    - ${user.joint_max_velocity}
+    - ${user.joint_max_velocity}
+    - ${user.joint_max_velocity}
+    - ${user.joint_max_velocity}
+    - ${user.gripper_max_velocity}
+    - ${user.joint_max_velocity}
+    - ${user.joint_max_velocity}
+    - ${user.joint_max_velocity}
+    - ${user.joint_max_velocity}
+    - ${user.joint_max_velocity}
+    - ${user.joint_max_velocity}
+    - ${user.gripper_max_velocity}
+  interpolation_hz: ${user.interpolation_hz}
+  max_acceleration:
+    - ${user.joint_max_acceleration}
+    - ${user.joint_max_acceleration}
+    - ${user.joint_max_acceleration}
+    - ${user.joint_max_acceleration}
+    - ${user.joint_max_acceleration}
+    - ${user.joint_max_acceleration}
+    - null  # Left gripper: velocity limit only.
+    - ${user.joint_max_acceleration}
+    - ${user.joint_max_acceleration}
+    - ${user.joint_max_acceleration}
+    - ${user.joint_max_acceleration}
+    - ${user.joint_max_acceleration}
+    - ${user.joint_max_acceleration}
+    - null  # Right gripper: velocity limit only.
+  wait: true
+  timeout_s: 3.0
+  history: 1024
+  filters: []
+
+workflow:
+  action_smoothing:
+    enabled: ${user.smooth_action}
+    alpha: ${user.smooth_action_alpha}
+    gripper: ${user.smooth_action_gripper}
+  data_cpu_affinity: ${user.data_cpu_affinity}
+  open_grippers_before_policy:
+    enabled: ${user.open_grippers_before_policy}
+    positions: ${user.gripper_open_positions}
+    tolerance: 0.1
+    timeout_s: 5.0  # feedback settling timeout after interpolation
+    settle_s: 0.5
+  return_to_shutdown_pose: ${user.return_to_shutdown_pose}
+  open_grippers_after_policy:
+    enabled: ${user.open_grippers_after_policy}
+    positions: ${user.gripper_open_positions}
+    tolerance: ${user.exit_gripper_open_tolerance}
+    timeout_s: 5.0
+    settle_s: 0.5
+  stop_on_done: true
+
+transport:
+  backend: zmq
+  namespace: ${oc.env:PROMETHEUS_ZMQ_NAMESPACE,prometheus-v3}
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: outputs/hydra/pi05_ExpertConcat_rollout_sync/${run.id}

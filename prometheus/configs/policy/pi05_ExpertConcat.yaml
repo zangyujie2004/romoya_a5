@@ -1,0 +1,31 @@
+_target_: prometheus.policy.pi05_ExpertConcat_policy.Pi05ExpertConcatPolicy
+
+inputs:
+  anchor: base_0_color
+  slop_ms: 60.0
+  window_size: 8  # tactile frames per request; must equal tactile_history of the checkpoint (checked on connect)
+  stride: 1
+  wait_latest: true
+  wait_latest_timeout_ms: 5.0
+  image_size: 224
+  source_image_hw: [240, 320]  # camera resolution of the training recordings; null disables the check
+  camera_streams:  # training camera bundle -> live stream
+    base_0: base_0_color
+    left_wrist_0: left_wrist_0_color
+    right_wrist_0: right_wrist_0_color
+  state_stream: robot_state
+  tactile_streams:  # order of preprocess_pi05 TACTILE_BUNDLE_ORDER
+    - left_wrist_0_tactile_flow
+    - left_wrist_1_tactile_flow
+    - right_wrist_0_tactile_flow
+    - right_wrist_1_tactile_flow
+
+remote:
+  server: ws://127.0.0.1:8000
+  connect_timeout_s: 10.0
+  request_timeout_s: 10.0
+
+prompt: null  # null: the server's training prompt; otherwise must match export.lerobot_pi05.prompt exactly
+n_action_steps: 50
+action_hz: 30.0
+action_space: abs_qpos
